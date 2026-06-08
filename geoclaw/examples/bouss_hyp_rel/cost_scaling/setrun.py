@@ -6,7 +6,7 @@ that will be read in by the Fortran code.
 
 """
 
-import os
+import os,sys
 import numpy as np
 
 try:
@@ -509,8 +509,11 @@ def setgeo(rundata):
     # Also make sure to use the correct Makefile pointing to bouss version
     # and set clawdata.num_eqn = 5
 
-   #Boussinesq data
-    from clawpack.geoclaw.data import BoussData, BoussFlagRegionData
+    #Boussinesq data
+    local_geoclaw = os.environ["LOCALGEOCLAW"]
+    sys.path.append(os.path.join(local_geoclaw,'src','python','geoclaw'))
+    from data import BoussData, BoussFlagRegionData
+
     rundata.add_data(BoussData(),'bouss_data')
     
     rundata.bouss_data.bouss_min_level = 1    # coarsest level to apply bouss (not used for EDC)

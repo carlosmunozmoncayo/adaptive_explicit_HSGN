@@ -6,7 +6,7 @@ that will be read in by the Fortran code.
 
 """
 
-import os
+import os, sys
 import numpy as np
 
 try:
@@ -502,16 +502,7 @@ def setgeo(rundata):
     # for qinit perturbations, append lines of the form: (<= 1 allowed for now!)
     #   [minlev, maxlev, fname]
 
-
-    # To use Boussinesq solver, add bouss_data parameters here
-    # Also make sure to use the correct Makefile pointing to bouss version
-    # and set clawdata.num_eqn = 5
-
-   #Boussinesq data
-    # from clawpack.geoclaw.data import BoussData, BoussFlagRegionData
-    # from localdata import BoussData, BoussFlagRegionData
-    import sys
-    import os
+    #Boussinesq data
     local_geoclaw = os.environ["LOCALGEOCLAW"]
     sys.path.append(os.path.join(local_geoclaw,'src','python','geoclaw'))
     from data import BoussData, BoussFlagRegionData
