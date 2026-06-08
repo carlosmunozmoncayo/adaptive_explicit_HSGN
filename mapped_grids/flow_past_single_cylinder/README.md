@@ -10,3 +10,4 @@ For the SWE, take `alpha_dimensionless_relaxation=0`, turn off transverse propag
 
 To generate Figures 14 and 15 in the paper, run:
 1. python plots_surface_paper.py (make sure the directory Figures exists)
+2. python plot_gauge_analysis.py
