@@ -9,5 +9,6 @@ To generate the data for mbHSGN, run the following commands:
 For the SWE, take `alpha_dimensionless_relaxation=0`, turn off transverse propagation: `clawdata.transverse_waves = 'none'`, and reduce the CFL number:`clawdata.cfl_desired = 0.45` in `setrun.py`. To compensate for the decreased CFL number, also increase the initial refinement ratio to 4 (instead of 2) in `setrun.py`.
 
 To generate Figures 14 and 15 in the paper, run:
-1. python plots_surface_paper.py (make sure the directory Figures exists)
-2. python plot_gauge_analysis.py
+1. python plot_coarse_mapped_grid.py (make sure the directory Figures exists)
+2. python plotting_results_pyvista.py
+3. python plot_gauge_analysis.py
