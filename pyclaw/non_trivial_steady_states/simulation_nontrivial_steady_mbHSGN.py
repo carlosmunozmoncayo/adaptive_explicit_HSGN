@@ -1,0 +1,435 @@
+#!/usr/bin/env python
+# encoding: utf-8
+
+r"""
+Dispersive water waves modelling
+This non-hydrostatic hyperbolic system of eqs. was proposed by Escalante et al. (2019)
+==================
+
+Solve the one-dimensional equations:
+
+.. math::
+    q_t+F(q)_x+B(q)q_x=S(q),\\
+    q=(h, hu, hw, hp, H).
+
+Here h is the depth, u is the horizontal velocity, p is the non hydrostatic pressure,
+w is the vertical velocity, and H(x) is the given depth of the ocean at rest.
+This script simulates the propagation of a solitary wave solution for the hyperbolic
+relaxation system over a frictionless bottom.
+"""
+
+from __future__ import absolute_import
+import sys
+import os
+import numpy as np
+from scipy.integrate import solve_ivp
+from scikits.odes import dae
+
+#Importing Riemann solver and source terms
+parent_dir = os.path.abspath(os.path.join(os.getcwd(), os.pardir))
+sys.path.append(os.path.join(parent_dir, 'src'))
+import rs_bouss_hyprel_fwave_splitting_1D as rs
+# sys.path.append(os.path.join(parent_dir))
+# import dispersive_SWEs_fwave_splitting_1D as rs
+from dispersive_tfluct import tfluct1
+
+
+MIN_h = 1E10
+MAX_u = -1E10 
+MIN_dt = 1E10
+
+h=0
+hu=1
+hw=2
+hp=3
+sech = lambda x: 1.0/np.cosh(x)
+cosh = lambda x: np.cosh(x)
+tanh = lambda x: np.tanh(x)
+
+def setup(outdir='./_output',solver_type='sharpclaw',
+          bouss_equations='EDC',
+          mx=10000, gamma=3./2., order=2,
+          transition="no", filter_type="BTE",
+          decayparam=(2,20),transition_after_time=-1,
+          xlower=-15., xupper=25.,
+          tfinal=1.,nout=50, relaxation_zone=(100,130),
+          petsc=False,qinit=None,c_sq=50.0,g=9.81):
+    
+    if petsc:
+        from clawpack import petclaw as pyclaw
+    else:
+        from clawpack import pyclaw
+        
+    if bouss_equations == 'EDC':
+        print("Setting up neq, nwaves, and sources EDC system")
+        num_eqn=4
+        num_waves=4
+        from source_terms import classic_source_step_EDC as classic_source_step
+        from source_terms import sharpclaw_source_step_EDC as sharpclaw_source_step
+
+    elif bouss_equations == 'BBBD':
+        print("Setting up neq, nwaves, and sources BBBD system")
+        num_eqn=6
+        num_waves=6
+        from source_terms import classic_source_step_BBBD as classic_source_step
+        from source_terms import sharpclaw_source_step_BBBD as sharpclaw_source_step
+        
+    if solver_type == 'classic':
+        solver = pyclaw.ClawSolver1D(rs)
+        solver.order = order
+        solver.limiters = pyclaw.limiters.tvd.minmod
+        solver.fwave=True
+        solver.step_source=classic_source_step
+        solver.source_split = 2
+    elif solver_type == 'sharpclaw':
+        solver = pyclaw.SharpClawSolver1D(rs)
+        solver.fwave=True
+        solver.weno_order=5
+        solver.lim_type=2
+        solver.tfluct = tfluct1
+        solver.dq_src = sharpclaw_source_step
+        solver.call_before_step_each_stage = False
+
+    solver.num_waves = num_waves
+    solver.num_eqn = num_eqn
+    
+    solver.dt_initial = 1e-6
+    solver.cfl_desired = 0.9
+    solver.cfl_max = 1.0
+
+    solver.max_steps=int(1e8)
+
+    #Define spatial domain
+    if qinit is not None:
+        mx = qinit[0].shape[-1]
+    x = pyclaw.Dimension(xlower,xupper,mx,name='x')
+    xc = x.centers
+    dx = x.delta
+    domain = pyclaw.Domain(x)
+    state = pyclaw.State(domain,num_eqn,num_aux=3)
+    #First compoment of aux will correspond to bathymetry
+    #Second component will correspond to parameter c^2 (changing in space)
+    #Third component will correspond to a decay parameter for damping
+    #of hw and hp (EDC system)
+
+    a = 0.2
+    h0 = 1.0
+    L = xupper-xlower #Physical domain length
+    alpha = np.sqrt(mx/L/h0/g)
+    H=1.
+    # c_sq = 30.#1000.*(alpha*np.sqrt(g*H))**2 #Such that c^2~2/dx and we are in the resolved regime
+    print(f"csq={c_sq}")
+    print(f"1/dx={1./dx}")
+
+    state.problem_data['grav'] = g
+    state.problem_data['gama'] = gamma
+    state.problem_data['eta_sq'] = 1.0
+    state.problem_data['c_sq'] = c_sq
+    state.problem_data['dry_tolerance'] = 1e-4
+    state.problem_data['sea_level'] = 1.
+    if bouss_equations == 'EDC':
+        state.problem_data['bouss_equations'] = 1
+    elif bouss_equations == 'BBBD':
+        state.problem_data['bouss_equations'] = 2
+    else:
+        state.problem_data['bouss_equations'] = 0
+    
+    xc = state.grid.x.centers
+
+    #Auxiliary vector will contain bathymetry
+    solver.aux_bc_lower[0] = pyclaw.BC.extrap
+    solver.aux_bc_upper[0] = pyclaw.BC.extrap
+
+    solver.bc_lower[0] = pyclaw.BC.extrap
+    solver.bc_upper[0] = pyclaw.BC.extrap
+
+
+    #Setting the transition method from the hyperbolic relaxation BTE
+    #to shallow water equations
+    filx, decayx= transition_HypRelBTE_SWE(transition=transition,filter_type=filter_type,
+                                           relaxation_zone=relaxation_zone,xc=xc,decayparam=decayparam)
+
+    if bouss_equations == 'EDC':
+        print("Setting initial conditions for EDC system")
+        if qinit is not None:
+            print("Reading initial conditions from qinit")
+            h,u,w,p,z = qinit
+        else:
+            print("Generating initial conditions")
+            h,u,w,p,z = set_IC_steady_EDC(xc=xc,g=g,gamma=gamma,c_sq=c_sq)
+            # h,u,w,p,z = set_IC_steady_EDC_DAE(xc=xc,g=g,gamma=gamma,c_sq=c_sq)
+        state.q[0,:] = h
+        state.q[1,:] = h*u
+        state.q[2,:] = h*w
+        state.q[3,:] = h*p
+        state.aux[0,:] = z
+        state.aux[1,:] = c_sq
+        state.aux[2,:] = 0.
+        ICs_for_boundary = np.copy(state.q)
+    else:
+        ValueError("Only EDC system is implemented")                 
+
+    if transition in ["filter", "no"]: 
+        def b4step(self, state, filx=filx):
+            #Get variables
+            csq_space = state.aux[1]
+            xc = state.grid.x.centers
+            q = state.q
+            #Damp non-hydrostatic variables
+            if transition_after_time < state.t:
+                q[2:,:] = q[2:,:]*filx
+                state.aux[1,:] = c_sq*filx
+            #Relaxation absorbing boundary conditions
+            xc = state.grid.x.centers
+            L = xc[-1] - xc[0]
+            upperx = xc[-1] - 0.1*L
+            lowerx = xc[0] + 0.1*L
+            damp_gamma = np.ones_like(xc)
+            damp_gamma = np.where(xc>upperx,(xc[-1]-xc)/(xc[-1]-upperx),damp_gamma)
+            damp_gamma = np.where(xc<lowerx,(xc-xc[0])/(lowerx-xc[0]),damp_gamma)
+            for i in range(4):
+                state.q[i,:] = state.q[i,:]*np.sqrt(damp_gamma)+(1.-np.sqrt(damp_gamma))*ICs_for_boundary[i,:]
+
+        # solver.before_step = b4step
+    
+
+    #solver.call_before_step_each_stage=True
+    claw = pyclaw.Controller()
+    claw.keep_copy = True
+    claw.tfinal = tfinal
+    claw.num_output_times = nout
+    claw.solution = pyclaw.Solution(state,domain)
+    claw.solver = solver
+    claw.outdir = outdir
+    claw.setplot = setplot
+    claw.write_aux_init = True
+    return claw
+
+def set_IC_steady_EDC(xc, H0 = 1.0, q0 = 1.8, g = 9.81, gamma = 2.,
+                      c_sq = 30.):
+    def get_aux_f(a,b,c):
+        f = lambda x: 2*c*(x - a)*np.exp(-b*(x - a)**2)
+        fx = lambda x: 2*c*np.exp(-b*(a - x)**2)*(1 - 2*b*(a - x)**2)
+        fxx = lambda x: -4*b*c*np.exp(-b*(a - x)**2)*(-3 + 2*b*(a - x)**2)*(a - x)
+        return f, fx, fxx
+    f,fx,fxx = get_aux_f(5.,3.4,1.5)
+    def steady_EDC(x,q=q0,g=g,f=f,fx=fx,fxx=fxx,h0=H0,z0=0.,gamma=gamma,c_sq=c_sq):
+        y0=np.array([h0,z0])
+        def func(x,y):
+            h = y[0]
+            z = y[1]
+            rhs = np.zeros(2)
+            w = f(x)
+            p = (q/gamma)*fx(x)
+            px = (q/gamma)*fxx(x)
+            rhs[0] = (-h*px-(g*h+gamma*p)*(h*0.5*px/c_sq+w*h/q))/(0.5*g*h-q**2/(h**2)+(1-0.5*gamma)*p)
+            rhs[1] = -0.5*rhs[0] + h*w/q + h*0.5*px/c_sq
+            return rhs
+        x_span = np.array([x[0],x[-1]])
+        sol = solve_ivp(func,x_span,y0,method='RK45',t_eval=x,rtol=1.e-13,atol=1.e-13)
+        h = sol.y[0]
+        bath = sol.y[1]
+        w = f(x)
+        p = (q/gamma)*fx(x)
+        u = q/h
+        return h,u,p,w,bath
+    h,u,p,w,bath = steady_EDC(x=xc)
+    return h,u,w,p,bath
+
+def set_IC_steady_EDC_DAE(xc, H0=1.0, q=1.8, g=9.81, gamma=3./2., c_sq=50.):
+    def get_aux_f(a,b,c):
+        f = lambda x: 2*c*(x - a)*np.exp(-b*(x - a)**2)
+        fx = lambda x: 2*c*np.exp(-b*(a - x)**2)*(1 - 2*b*(a - x)**2)
+        fxx = lambda x: -4*b*c*np.exp(-b*(a - x)**2)*(-3 + 2*b*(a - x)**2)*(a - x)
+        return f, fx, fxx
+    f,fx,fxx = get_aux_f(5.,3.4,1.5)
+
+    def residual(t, x, xdot, result):
+        """ we create the residual equations for the problem"""
+        h = x[0]; hx = xdot[0]
+        z = x[1]; zx = xdot[1]
+        w = f(t); wx = fx(t)
+        p = (q/gamma)*fx(t); px = (q/gamma)*fxx(t)
+
+        result[0] = -hx*(0.5*g*h-q**2/(h**2)+(1-0.5*gamma)*p)+(-h*px-(g*h+gamma*p)*(h*0.5*px/c_sq+w*h/q))
+        result[1] = -zx -0.5*hx + h*w/q + h*0.5*px/c_sq
+      
+    solver = dae('ida', eqsres=residual, 
+            compute_initcond='yp0',
+            first_step_size=1e-18,
+            atol=1e-15,
+            rtol=1e-15,
+            old_api=False)
+    
+    solution= solver.solve(tspan=xc,y0=[H0, 0.], yp0=[0., 0.])
+    h = solution.values.y[:,0]
+    bath = solution.values.y[:,1]
+    w = f(xc)
+    p = (q/gamma)*fx(xc)
+    u = q/h
+    return h, u, p, w, bath
+    
+    
+def transition_HypRelBTE_SWE(transition,filter_type,xc,relaxation_zone, decayparam):
+    
+    def bump_filter(x,a,b):
+        #Generates a smooth function =1 to the left of a and =0 to the right of b
+        #Assumes b>a>=0
+        f = lambda x: np.where(x>1.e-16, np.exp(-1/x), 0.)
+        g = lambda x: f(x)/(f(x)+f(1-x))
+        return -g((x-a)/(b-a))+1
+
+    def affine_filter(x,a,b):
+        #Defining relaxation zone
+        #Generates an affine function equal to 1 for x<=a and equal to 0 for x>b
+        Lrelax = b-a
+        di = x-b #distance of points from relaxation zone's origin 
+        mi = np.abs(di)/Lrelax #slope of filter in relaxation zone
+        return (mi*(mi<=1)+(mi>1))*(di<=0)
+
+    def sigma_decay_rate(x,x0,D,a,b):
+        return (x>=x0)*(x<x0+D)*b*np.abs((x-x0)/D)**a+(x>=x0+D)*b
+
+    filx=np.ones_like(xc)
+    decayx=np.zeros_like(xc)
+
+    if transition in ["filter", "no"]:
+        #Filter type
+        if filter_type == "jump": 
+            filter_type = lambda x,a,b: (x<=a)
+        elif filter_type == "affine":
+            filter_type = affine_filter
+        elif filter_type == "bump":
+            filter_type = bump_filter
+        elif filter_type == "BTE":
+            filter_type = lambda x,a,b: np.ones_like(x)
+        elif filter_type == "SWE":
+            filter_type = lambda x,a,b: np.zeros_like(x)
+        else:
+            print(f"ERROR: No available filter: {filter_type}")
+            filter_type = None 
+
+        #Computing filter over domain
+        filx = filter_type(x=xc,a=relaxation_zone[0],b=relaxation_zone[1])
+
+    elif transition == "decay":
+        #Computing decay rate
+        #Decay rate starts increasing at x=a
+        (a,b)=decayparam
+        D = relaxation_zone[1]-relaxation_zone[0]
+        decayx = sigma_decay_rate(x=xc,x0=relaxation_zone[0],D=D,a=a,b=b)
+
+    else: print(f"ERROR: No available transition: {transition}")
+
+    return filx, decayx
+
+    
+#--------------------------
+def setplot(plotdata):
+#--------------------------
+    """ 
+    Specify what is to be plotted at each frame.
+    Input:  plotdata, an instance of visclaw.data.ClawPlotData.
+    Output: a modified version of plotdata.
+    """
+    #xc=plotdata.frames[0].grid.x.centers
+    #Spatial limits
+    #xmin=xc[0]#-20
+    #xmax=xc[-1]#300
+    # Plot variables
+    def bathy(current_data):
+        return current_data.aux[0, :]
+
+    def eta(current_data):
+        return current_data.q[0, :] + bathy(current_data)
+    
+    rgb_converter = lambda triple: [float(rgb) / 255.0 for rgb in triple]
+
+    #plotdata.clearfigures()  # clear any old figures,axes,items data
+
+    # Figure for depth
+    plotfigure = plotdata.new_plotfigure(name='Water height', figno=0)
+    # Set up for axes in this figure:
+    plotaxes = plotfigure.new_plotaxes()
+    # plotaxes.xlimits = [xmin,xmax]
+    # plotaxes.ylimits = [0.8,1.25]
+    plotaxes.title = 'h'
+    plotaxes.axescmd = 'subplot(221)'
+    
+
+    # Set up for item on these axes:
+    plotitem = plotaxes.new_plotitem(plot_type='1d_fill_between')
+    plotitem.plot_var = eta
+    plotitem.plot_var2= bathy
+    plotitem.color = rgb_converter((67,183,219))
+    
+    plotitem = plotaxes.new_plotitem(plot_type='1d_plot')
+    plotitem.plot_var = bathy
+    plotitem.color = 'k'
+
+    plotitem = plotaxes.new_plotitem(plot_type='1d_plot')
+    plotitem.plot_var = eta
+    plotitem.color = 'k'
+    plotitem.kwargs = {'linewidth':1}
+
+    # Figure for momentum[1]
+    # plotfigure = plotdata.new_plotfigure(name='Momentum', figno=1)
+
+    # Set up for axes in this figure:
+    plotaxes = plotfigure.new_plotaxes()
+    plotaxes.axescmd = 'subplot(222)'
+    # plotaxes.xlimits = [xmin,xmax]
+    plotaxes.ylimits = [1.8-1.e-13,1.8+1.e-13]
+    plotaxes.title = 'u-Momentum'
+    # Set up for item on these axes:
+    plotitem = plotaxes.new_plotitem(plot_type='1d')
+    plotitem.plot_var = 1
+    plotitem.plotstyle = '-'
+    plotitem.color = 'b'
+    plotitem.kwargs = {'linewidth':1}
+
+    # Figure for w tracer[2]
+    #plotfigure = plotdata.new_plotfigure(name='Momentum', figno=1)
+
+
+    # Set up for axes in this figure:
+    plotaxes = plotfigure.new_plotaxes()
+    plotaxes.axescmd = 'subplot(223)'
+    # plotaxes.xlimits = [xmin,xmax]
+    plotaxes.ylimits = [-1.e-13,1.e-13]
+    plotaxes.title = 'hw'
+    # Set up for item on these axes:
+    plotitem = plotaxes.new_plotitem(plot_type='1d')
+    plotitem.plot_var = 2
+    plotitem.plotstyle = '-'
+    plotitem.color = 'g'
+    plotitem.kwargs = {'linewidth':1}
+
+
+    # Figure for p tracer[2]
+    #plotfigure = plotdata.new_plotfigure(name='Momentum', figno=1)
+
+
+    # Set up for axes in this figure:
+    plotaxes = plotfigure.new_plotaxes()
+    plotaxes.axescmd = 'subplot(224)'
+    # plotaxes.xlimits = [xmin,xmax]
+    plotaxes.ylimits = [-0.25,0.25]
+    plotaxes.title = 'hp'
+    # Set up for item on these axes:
+    plotitem = plotaxes.new_plotitem(plot_type='1d')
+    plotitem.plot_var = 3
+    plotitem.plotstyle = '-'
+    plotitem.color = 'r'
+    plotitem.kwargs = {'linewidth':1}
+
+    
+    return plotdata
+
+
+if __name__=="__main__":
+    from clawpack.pyclaw.util import run_app_from_main
+    output = run_app_from_main(setup,setplot)
+
+  
+
