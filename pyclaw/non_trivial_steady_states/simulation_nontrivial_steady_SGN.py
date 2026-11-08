@@ -124,6 +124,7 @@ def setup(outdir='./_output',solver_type='sharpclaw',
     state.problem_data['eta_sq'] = 1.0
     state.problem_data['c_sq'] = c_sq
     state.problem_data['dry_tolerance'] = 1e-4
+    state.problem_data['alphaldr'] = 1.153  # required by Riemann solver cparam; only used for DR system (bouss_equations=3)
     state.problem_data['sea_level'] = 1.
     if bouss_equations == 'EDC':
         state.problem_data['bouss_equations'] = 1

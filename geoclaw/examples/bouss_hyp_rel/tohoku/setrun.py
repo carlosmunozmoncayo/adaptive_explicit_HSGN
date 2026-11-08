@@ -489,12 +489,13 @@ def setgeo(rundata):
     #rundata.fgout_data.fgout_grids = []
 
     from clawpack.geoclaw.data import BoussData, BoussFlagRegionData
-    # from localdata import BoussData, BoussFlagRegionData
-    # import sys
-    # import os
-    # local_geoclaw = os.environ["LOCALGEOCLAW"]
-    # sys.path.append(os.path.join(local_geoclaw,'src','python','geoclaw'))
-    # from data import BoussData, BoussFlagRegionData
+    # Use the local data.py (BoussData with hyperbolic-relaxation attributes, BoussFlagRegionData);
+    # the stock clawpack.geoclaw.data.BoussData lacks bouss_trans_low, bouss_EDC_c_sq, ... and
+    # BoussFlagRegionData does not exist there.
+    import sys 
+    local_geoclaw = os.environ["LOCALGEOCLAW"]
+    sys.path.append(os.path.join(local_geoclaw,'src','python','geoclaw'))
+    from data import BoussData, BoussFlagRegionData
     rundata.add_data(BoussData(),'bouss_data')
     
     rundata.bouss_data.bouss_min_level = 1    # coarsest level to apply bouss (not used for EDC)

@@ -15,7 +15,7 @@ H0 = 1.0
 a = 0.2
 g = 9.81
 csq = 1e5
-tfinal = 0.1
+tfinal = 1.0
 
 def set_IC_steady_SGN_BBBD(x,h0=H0,a=a,g=g):
     r = (1.0/h0)*np.sqrt(3.0*a/(1.0+a))

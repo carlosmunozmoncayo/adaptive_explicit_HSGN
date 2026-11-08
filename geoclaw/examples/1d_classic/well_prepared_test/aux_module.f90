@@ -13,16 +13,16 @@ subroutine read_data(fname_tail, x,w,p, mx)
     character(len=1024) :: fullpath
     integer :: length
 
-    ! Get environment variable CLAW
-    call get_environment_variable("CLAW", env_path, length, status=ios)
+    ! Get environment variable LOCALGEOCLAW (set by geoclaw/local_CLAW_env.sh)
+    call get_environment_variable("LOCALGEOCLAW", env_path, length, status=ios)
     if (ios /= 0) then
-      print *, "Error: environment variable CLAW not set"
+      print *, "Error: environment variable LOCALGEOCLAW not set (source geoclaw/local_CLAW_env.sh)"
       stop
     end if
     env_path = env_path(:length)
 
     ! Build full path
-    fullpath = "/Users/munozmca/Desktop/Research/dispersive-water-waves/geoclaw/examples/1d_classic/well_prepared_test/"//trim(fname_tail)
+    fullpath = trim(env_path)//"/examples/1d_classic/well_prepared_test/"//trim(fname_tail)
     print *, "Reading data from file: ", trim(fullpath)
 
     ! Open text file

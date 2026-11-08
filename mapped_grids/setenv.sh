@@ -4,7 +4,7 @@
 #First check if $CLAW is set
 if [ -z "$CLAW" ]; then
     echo "Error: \$CLAW is not set. Please set it to the root directory of your clawpack installation."
-    exit 1
+    return 1 2>/dev/null || exit 1  # "return" when sourced (exit would close the shell)
 fi
 
 #Sets some environment variables, run with source

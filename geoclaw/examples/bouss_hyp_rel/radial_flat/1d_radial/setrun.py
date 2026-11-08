@@ -70,10 +70,10 @@ def setrun(claw_pkg='geoclaw'):
     # define the mapping to the physical domain
 
     clawdata.lower[0] = 0.          # xlower
-    clawdata.upper[0] = 5.e3 #7e3           # xupper
+    clawdata.upper[0] = 7.e3           # xupper
 
     # Number of grid cells:
-    clawdata.num_cells[0] = 5000#7000
+    clawdata.num_cells[0] = 7000
     
     rundata.grid_data.grid_type = 0    # uniform grid
     rundata.grid_data.monitor_fgmax = False  # record max h,s,etc in each cell?
@@ -93,6 +93,7 @@ def setrun(claw_pkg='geoclaw'):
     alpha = 3.0           #flag_EDC_alpha PLEASE DO NOT DELETE THIS COMMENT
     h0 = 100.0; g = 9.81 #Computing relaxation parameter as suggested in Escalante et al. (2019)
     rundata.bouss_data.bouss_EDC_c_sq = (alpha**2)*h0*g
+    rundata.bouss_data.bouss_EDC_gamma = 1.5
     if Bouss_Hyp_rel==0:
         #rundata.bouss_data.bouss_equations = -1
         #Calling EDC but really solving SWE

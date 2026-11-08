@@ -18,3 +18,12 @@ Then, set `probdata.add_param('wellprepared', 1,  'Well-prepared initial conditi
 To generate Figures 5 and 6, run: `python plot_eta_pressure.py`.
 To generate Figure 7, run: `python plot_Fourier.py`.
 
+
+The plotting scripts also need an SGN reference solution in `_output_SGN`:
+set `rundata.bouss_data.bouss_equations = 2` in `setrun.py`, then `make data` and `make .output OUTDIR=_output_SGN`
+(the 1D Boussinesq library in `geoclaw/src/1d_classic/bouss` uses the SGN parameter alpha=1, as stated in the paper).
+Create the `Figures` directory before plotting.
+
+`_output_WP_data` (input of `generate_well_prepared_IC.py`) is obtained with the same SGN setting together with
+`clawdata.output_style = 3` (3 steps, one output per step) and `clawdata.dt_variable = False` (dt = dt_initial = 1e-5).
+Note that `generate_well_prepared_IC.py` overwrites `w0_p0.txt`.

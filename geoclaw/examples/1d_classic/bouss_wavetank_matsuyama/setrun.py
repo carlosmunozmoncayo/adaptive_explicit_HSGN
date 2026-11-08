@@ -88,7 +88,11 @@ def setrun(claw_pkg='geoclaw'):
 
     # To use Boussinesq solver, add bouss_data parameters here
     # Also make sure to use the correct Makefile pointing to bouss version
-    from clawpack.geoclaw.data import BoussData1D
+    # Use the local data.py (BoussData1D with bouss_EDC_c_sq / bouss_EDC_gamma); the stock
+    # clawpack.geoclaw.data.BoussData1D does not define these attributes.
+    local_geoclaw = os.environ["LOCALGEOCLAW"]
+    sys.path.append(os.path.join(local_geoclaw,'src','python','geoclaw'))
+    from data import BoussData1D
     rundata.add_data(BoussData1D(),'bouss_data')
 
     rundata.bouss_data.bouss_equations = 2    # 0=SWE, 1=MS, 2=SGN, -1=EDC    #flag_bouss_data.bouss_equations PLEASE DO NOT DELETE THIS COMMENT
