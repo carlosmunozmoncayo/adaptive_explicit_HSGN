@@ -4,7 +4,7 @@ import numpy as np
 from scipy.integrate import solve_ivp
 
 g=9.81
-alpha=5.
+alpha=3.
 H=1.
 c_sq=(alpha*np.sqrt(g*H))**2
 A=0.2

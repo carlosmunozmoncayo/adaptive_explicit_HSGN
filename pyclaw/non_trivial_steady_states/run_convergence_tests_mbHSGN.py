@@ -72,7 +72,7 @@ for mxcoarse in mx_list:
 for i in range(len(mx_list)):
     mx = mx_list[i]
     qinit = q_ICs[i]
-    outdir = f"./_output_convergence_classic/mx_{mx}"
+    outdir = f"./_output_convergence_classic_mbHSGN/mx_{mx}"
     claw = setup(mx=mx,qinit=qinit,outdir=outdir,gamma=gamma,
                  xupper=xupper,xlower=xlower,c_sq=c_sq,solver_type='classic')
     claw.run()

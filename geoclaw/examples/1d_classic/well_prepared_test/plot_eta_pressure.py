@@ -8,7 +8,6 @@ from scipy.ndimage import gaussian_filter1d
 mapc2p = make_mapc2p('celledges.data')
 
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes, mark_inset
-from mpl_toolkits.axes_grid1.inset_locator import InsetPosition
 
 colors = {'mbHSGN_alpha3_WP': 'green', 'mbHSGN_alpha3_noWP': 'black', 'SGN': 'magenta'}
 
@@ -82,8 +81,8 @@ axins.tick_params(labelsize=7)
 # Draw box on main axis and connecting lines to inset
 mark_inset(ax[1], axins, loc1=3, loc2=4, fc="none", ec="black", lw=0.8, linestyle='-')
 plt.tight_layout()
+plt.savefig('Figures/WP_surface_elevation_1D.pdf')
 plt.show()
-# plt.savefig('Figures/WP_surface_elevation_1D.pdf')
 
 xlims = [(-600,600),(0,7500),(0,7500)]
 fig, ax = plt.subplots(1,3, figsize=(15,3))
@@ -124,5 +123,5 @@ for i, frame in enumerate([0, 10, 25]):
     ax[i].set_xlabel(r'$x\, (m)$')
 ax[0].set_ylabel(r'$p\, (m^2/s^2)$')
 plt.tight_layout()
+plt.savefig('Figures/WP_nonhydrostatic_pressure_1D.pdf')
 plt.show()
-# plt.savefig('Figures/WP_nonhydrostatic_pressure_1D.pdf')

@@ -6,7 +6,7 @@ from matplotlib.patches import Rectangle
 import matplotlib.colors as mcolors
 
 norm = mcolors.Normalize(vmin=-0.05, vmax=0.05)
-path = './_output_EDC'
+path = './_output_mbHSGN'  # run_automated_2d.sh writes mbHSGN (EDC, Bouss_Hyp_rel=-1) here
 
 def read_all_patches(frame_nos, remove_overlaps=True,
                      variable_index=0, offset_z=0,
@@ -141,7 +141,7 @@ if __name__ == "__main__":
     xc_1d = sol_1d.state.grid.c_centers[0]
 
     sol_2d = Solution()
-    sol_2d.read(frame=frame_nos[-1], path='_output_EDC',
+    sol_2d.read(frame=frame_nos[-1], path=path,
                       read_aux=False,file_format='ascii')
     
     xc_2d = np.linspace(0.,5000.,5000)

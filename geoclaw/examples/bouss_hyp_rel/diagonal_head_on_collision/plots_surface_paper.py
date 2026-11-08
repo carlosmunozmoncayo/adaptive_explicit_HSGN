@@ -135,8 +135,7 @@ if __name__ == "__main__":
     #####################################################################
     #####################################################################
     #Plot surface in 2D, single plot
-    # frame_nos = [0,40,80]#list(range(0,81,9))#[4+4*i for i in range(9)]  # Generate frame numbers from 0 to 100 in steps of 10
-    frame_nos = list(range(0,81,9))
+    frame_nos = [0,40,80]#list(range(0,81,9))#[4+4*i for i in range(9)]  # Generate frame numbers from 0 to 100 in steps of 10
     print("Plotting 2D surface in single figure...")
     print("Reading in data and processing patches...")
     all_frames = read_all_patches(frame_nos,variable_index=-1)

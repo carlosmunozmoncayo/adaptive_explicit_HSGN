@@ -385,6 +385,7 @@ def setrun(claw_pkg='geoclaw'):
         flagregions.append(flagregion)
 
 
+    os.makedirs('ruled_rectangles', exist_ok=True)
     thickness = 40.0
     L = 800.0
     #Lower ones first

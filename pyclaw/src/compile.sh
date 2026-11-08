@@ -2,7 +2,7 @@
 
 rm -rf *.so
 #Riemann solvers
-python -m numpy.f2py -c linear_solver/lu_solver.f90 rp1_dispersive_SWEs_fwave_splitting.f90 -m rs_bouss_hyprel_fwave_splitting_1D --link-args="-llapack -lblas"
+python -m numpy.f2py -c linear_solver/lu_solver.f90 rp1_dispersive_SWEs_fwave_splitting.f90 -m rs_bouss_hyprel_fwave_splitting_1D -llapack -lblas
 #Total fluctuation
 python -m numpy.f2py -c total_fluct.f90 -m dispersive_tfluct
 #Source terms

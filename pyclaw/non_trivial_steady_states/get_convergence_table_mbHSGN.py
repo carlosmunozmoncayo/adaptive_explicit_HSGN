@@ -20,7 +20,7 @@ def errorfunc(sol,refsol,var=0):
 def rate_conv(errold, errnew, dxold, dxnew):
     return (np.log(errnew)-np.log(errold))/(np.log(dxnew)-np.log(dxold))
 
-def get_solutions(mx_list,path='_output_convergence_classic/mx_'):
+def get_solutions(mx_list,path='_output_convergence_classic_mbHSGN/mx_'):
     path_head = path
     list_sols = []
     list_refsols = []
@@ -33,14 +33,14 @@ def get_solutions(mx_list,path='_output_convergence_classic/mx_'):
         list_refsols.append(refsol)
     return list_sols, list_refsols
 
-def get_errors(mx_list,var=0,path='_output_convergence_classic/mx_'):
+def get_errors(mx_list,var=0,path='_output_convergence_classic_mbHSGN/mx_'):
     list_sols, list_refsols = get_solutions(mx_list, path=path)
     list_errors = []
     for i in range(len(list_sols)):
         list_errors.append(errorfunc(list_sols[i], list_refsols[i], var=var))
     return list_errors
 
-def get_rate_conv(mx_list, var=0,path='_output_convergence_classic/mx_'):
+def get_rate_conv(mx_list, var=0,path='_output_convergence_classic_mbHSGN/mx_'):
     list_sols, _ = get_solutions(mx_list, path=path)
     list_rate_conv = []
     error_list = get_errors(mx_list, var=var, path=path)
@@ -52,8 +52,8 @@ def get_rate_conv(mx_list, var=0,path='_output_convergence_classic/mx_'):
 
 if __name__ == "__main__":
     var = 0
-    errors = get_errors(mx_list=mx_list,var=var,path='_output_convergence_classic/mx_')
-    rates = get_rate_conv(mx_list=mx_list,var=var,path='_output_convergence_classic/mx_')
+    errors = get_errors(mx_list=mx_list,var=var,path='_output_convergence_classic_mbHSGN/mx_')
+    rates = get_rate_conv(mx_list=mx_list,var=var,path='_output_convergence_classic_mbHSGN/mx_')
     #Make a table with errors and rates of convergence (scientific notation for errors)
     table = []
     #First row empty for rate of convergence

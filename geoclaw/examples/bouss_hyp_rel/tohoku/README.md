@@ -9,3 +9,8 @@ To generate the Figures of Section 6.4 in the paper, run the following commands 
 4. python compare_gauges_dart.py
 
 Before plotting, data for SGN (`_output_UCSB_SGN` and `_output_fujii_SGN`) has to be generated.
+
+Notes (reproducibility check, Nov 2026):
+- Download the topography and the source models first: `python fetch_topo.py` and `python fetch_dtopo.py`.
+- For the SGN reference runs, GeoClaw's 2D Boussinesq solver must use the SGN parameter alpha=1 (paper, footnote 1):
+  in `$CLAW/geoclaw/src/2d/bouss/bouss_module.f90` set `alpha = 1.d0` instead of the default `alpha = 1.153d0`, then `make new`.

@@ -23,14 +23,11 @@ import sys
 import os
 import numpy as np
 from scipy.integrate import solve_ivp
-from scikits.odes import dae
 
 #Importing Riemann solver and source terms
 parent_dir = os.path.abspath(os.path.join(os.getcwd(), os.pardir))
 sys.path.append(os.path.join(parent_dir, 'src'))
 import rs_bouss_hyprel_fwave_splitting_1D as rs
-# sys.path.append(os.path.join(parent_dir))
-# import dispersive_SWEs_fwave_splitting_1D as rs
 from dispersive_tfluct import tfluct1
 
 
@@ -126,6 +123,7 @@ def setup(outdir='./_output',solver_type='sharpclaw',
     state.problem_data['eta_sq'] = 1.0
     state.problem_data['c_sq'] = c_sq
     state.problem_data['dry_tolerance'] = 1e-4
+    state.problem_data['alphaldr'] = 1.153  # required by Riemann solver cparam; only used for DR system (bouss_equations=3)
     state.problem_data['sea_level'] = 1.
     if bouss_equations == 'EDC':
         state.problem_data['bouss_equations'] = 1
@@ -157,7 +155,6 @@ def setup(outdir='./_output',solver_type='sharpclaw',
         else:
             print("Generating initial conditions")
             h,u,w,p,z = set_IC_steady_EDC(xc=xc,g=g,gamma=gamma,c_sq=c_sq)
-            # h,u,w,p,z = set_IC_steady_EDC_DAE(xc=xc,g=g,gamma=gamma,c_sq=c_sq)
         state.q[0,:] = h
         state.q[1,:] = h*u
         state.q[2,:] = h*w
@@ -235,39 +232,6 @@ def set_IC_steady_EDC(xc, H0 = 1.0, q0 = 1.8, g = 9.81, gamma = 2.,
         return h,u,p,w,bath
     h,u,p,w,bath = steady_EDC(x=xc)
     return h,u,w,p,bath
-
-def set_IC_steady_EDC_DAE(xc, H0=1.0, q=1.8, g=9.81, gamma=3./2., c_sq=50.):
-    def get_aux_f(a,b,c):
-        f = lambda x: 2*c*(x - a)*np.exp(-b*(x - a)**2)
-        fx = lambda x: 2*c*np.exp(-b*(a - x)**2)*(1 - 2*b*(a - x)**2)
-        fxx = lambda x: -4*b*c*np.exp(-b*(a - x)**2)*(-3 + 2*b*(a - x)**2)*(a - x)
-        return f, fx, fxx
-    f,fx,fxx = get_aux_f(5.,3.4,1.5)
-
-    def residual(t, x, xdot, result):
-        """ we create the residual equations for the problem"""
-        h = x[0]; hx = xdot[0]
-        z = x[1]; zx = xdot[1]
-        w = f(t); wx = fx(t)
-        p = (q/gamma)*fx(t); px = (q/gamma)*fxx(t)
-
-        result[0] = -hx*(0.5*g*h-q**2/(h**2)+(1-0.5*gamma)*p)+(-h*px-(g*h+gamma*p)*(h*0.5*px/c_sq+w*h/q))
-        result[1] = -zx -0.5*hx + h*w/q + h*0.5*px/c_sq
-      
-    solver = dae('ida', eqsres=residual, 
-            compute_initcond='yp0',
-            first_step_size=1e-18,
-            atol=1e-15,
-            rtol=1e-15,
-            old_api=False)
-    
-    solution= solver.solve(tspan=xc,y0=[H0, 0.], yp0=[0., 0.])
-    h = solution.values.y[:,0]
-    bath = solution.values.y[:,1]
-    w = f(xc)
-    p = (q/gamma)*fx(xc)
-    u = q/h
-    return h, u, p, w, bath
     
     
 def transition_HypRelBTE_SWE(transition,filter_type,xc,relaxation_zone, decayparam):
