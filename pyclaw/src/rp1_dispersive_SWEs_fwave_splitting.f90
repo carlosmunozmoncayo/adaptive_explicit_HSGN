@@ -1,6 +1,40 @@
 ! =========================================================
 subroutine rp1(maxmx,meqn,mwaves,maux,mbc,mx,ql,qr,auxl,auxr,fwave,s,amdq,apdq)
 ! =========================================================
+!Riemann solver for the classic (wave-propagation) solver: piecewise-constant data, so the
+!non-conservative products of EDC/BBBD use the jump of the free surface eta = h + b.
+!(For SharpClaw use rp1_sharpclaw, see below.)
+    implicit none
+    integer, intent(in) :: maxmx, meqn, mwaves, mbc, mx, maux
+    double precision, dimension(meqn,1-mbc:maxmx+mbc), intent(in) :: ql, qr
+    double precision, dimension(maux,1-mbc:maxmx+mbc), intent(in) :: auxl, auxr
+    double precision, dimension(meqn, 1-mbc:maxmx+mbc), intent(out) :: amdq, apdq
+    double precision, dimension(mwaves, 1-mbc:maxmx+mbc), intent(out) :: s
+    double precision, dimension(meqn, mwaves, 1-mbc:maxmx+mbc), intent(out) :: fwave
+    call rp1_hyprel(maxmx,meqn,mwaves,maux,mbc,mx,ql,qr,auxl,auxr,fwave,s,amdq,apdq,0)
+end subroutine rp1
+
+! =========================================================
+subroutine rp1_sharpclaw(maxmx,meqn,mwaves,maux,mbc,mx,ql,qr,auxl,auxr,fwave,s,amdq,apdq)
+! =========================================================
+!Riemann solver for SharpClaw (used through rs_bouss_hyprel_sharpclaw_1D.py). SharpClaw
+!reconstructs h while b is piecewise constant, so at a cell interface the jump of eta is
+!~ db even for a smooth free surface, and -c^2*ubar*d(eta) would upwind a term ~ ubar*db.
+!The non-conservative products of EDC/BBBD therefore use the jump of h, and the
+!corresponding bathymetry terms in sharpclaw_source_step_EDC / _BBBD are adapted to it.
+    implicit none
+    integer, intent(in) :: maxmx, meqn, mwaves, mbc, mx, maux
+    double precision, dimension(meqn,1-mbc:maxmx+mbc), intent(in) :: ql, qr
+    double precision, dimension(maux,1-mbc:maxmx+mbc), intent(in) :: auxl, auxr
+    double precision, dimension(meqn, 1-mbc:maxmx+mbc), intent(out) :: amdq, apdq
+    double precision, dimension(mwaves, 1-mbc:maxmx+mbc), intent(out) :: s
+    double precision, dimension(meqn, mwaves, 1-mbc:maxmx+mbc), intent(out) :: fwave
+    call rp1_hyprel(maxmx,meqn,mwaves,maux,mbc,mx,ql,qr,auxl,auxr,fwave,s,amdq,apdq,1)
+end subroutine rp1_sharpclaw
+
+! =========================================================
+subroutine rp1_hyprel(maxmx,meqn,mwaves,maux,mbc,mx,ql,qr,auxl,auxr,fwave,s,amdq,apdq,nc_jump)
+! =========================================================
 
 ! solve Riemann problem for the 1D shallow water equations using David George's
 ! augmented Riemann solver or Escalante's system using a Roe-type Riemann solver.
@@ -15,10 +49,17 @@ subroutine rp1(maxmx,meqn,mwaves,maux,mbc,mx,ql,qr,auxl,auxr,fwave,s,amdq,apdq)
 !The second component of the auxiliary array contains a flag that
 !determines wether SWEs or Escalante's hyperbolic relaxation of Saint Marie's system is solved
 !on the corresponding cell
+!
+!EDC (mbHSGN) and BBBD (HSGN): the Riemann solvers only contain the hydrostatic bathymetry term
+!g*hbar*db and the non-conservative product -c^2*ubar*\partial_x(eta) (nc_jump = 0, classic) or
+!-c^2*ubar*\partial_x(h) (nc_jump = 1, SharpClaw). The other bathymetry terms are not upwinded here: they
+!are in the source step, implicitly together with the
+!relaxation terms for the classic solver (classic_source_step_EDC / classic_source_step_BBBD),
+!explicitly for SharpClaw (sharpclaw_source_step_EDC / sharpclaw_source_step_BBBD), in source_terms.py.
     implicit none !(type, external)
     !external :: sgesv  
     
-    integer, intent(in) :: maxmx, meqn, mwaves, mbc, mx, maux
+    integer, intent(in) :: maxmx, meqn, mwaves, mbc, mx, maux, nc_jump
     double precision, dimension(meqn,1-mbc:maxmx+mbc), intent(in) :: ql, qr
     double precision, dimension(maux,1-mbc:maxmx+mbc), intent(in) :: auxl, auxr
     double precision, dimension(meqn, 1-mbc:maxmx+mbc), intent(out) :: amdq, apdq
@@ -159,7 +200,7 @@ subroutine rp1(maxmx,meqn,mwaves,maux,mbc,mx,ql,qr,auxl,auxr,fwave,s,amdq,apdq)
             call riemann_normal_HypRel_EDC(2, 3, grav, gama, c_sq, &
                                h_l, u_l, 0.d0, w_l, p_l, b_l, csq_l,&
                                h_r, u_r, 0.d0, w_r, p_r, b_r, csq_r, &
-                               fwEDC, swEDC)
+                               fwEDC, swEDC, nc_jump)
             do k=1,mwaves
                s(k,i) = swEDC(skip_fourth_idx(k))
                fwave(1:2,k,i) = fwEDC(1:2,skip_fourth_idx(k)) 
@@ -179,7 +220,7 @@ subroutine rp1(maxmx,meqn,mwaves,maux,mbc,mx,ql,qr,auxl,auxr,fwave,s,amdq,apdq)
             call riemann_normal_HypRel_BBBD(2, 3, grav, c_sq, &
                                h_l, u_l, 0.d0, w_l, sg_l, p_l, pb_l, b_l, csq_l,&
                                h_r, u_r, 0.d0, w_r, sg_r, p_r, pb_r, b_r, csq_r, &
-                               fwBBBD, swBBBD)
+                               fwBBBD, swBBBD, nc_jump)
             do k=1,mwaves
                s(k,i) = swBBBD(skip_fifth_idx(k))
                fwave(1:2,k,i) = fwBBBD(1:2,skip_fifth_idx(k)) 
@@ -226,7 +267,7 @@ subroutine rp1(maxmx,meqn,mwaves,maux,mbc,mx,ql,qr,auxl,auxr,fwave,s,amdq,apdq)
          end if
     end do 
 
-end subroutine rp1
+end subroutine rp1_hyprel
 
 !=============================================================================
 !Subroutines for SWEs
@@ -606,7 +647,7 @@ subroutine riemann_aug_JCP(maxiter,num_eqn,num_waves,hL,hR,huL,huR, &
 subroutine riemann_normal_HypRel_EDC(mu, nv, grav, gamma, c_sq, &
                                hl, ul, vl, wl, pl, bl, csq_l,&
                                hr, ur, vr, wr, pr, br, csq_r, &
-                               fw, sw)
+                               fw, sw, nc_jump)
 
    !Normal 2D Riemann solver for Escalante, Dumbser, and Castro's
    !hyperbolic relaxation of Sainte-Marie's dispersive water wave system
@@ -623,12 +664,18 @@ subroutine riemann_normal_HypRel_EDC(mu, nv, grav, gamma, c_sq, &
    !${CLAW}/riemann/src/geoclaw_riemann_utils.f is probably a better home for this routine
    !I'll leave it here for now
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-   !Using hydrostatic reconstruction for the bathymetry source term
+   !Bathymetry (no sensor): only the hydrostatic term g*hbar*db and the
+   !non-conservative product -c^2*ubar*d(eta) (which vanishes at rest) are kept here.
+   !The non-hydrostatic bathymetry terms -gamma*p*b_x (momentum) and +c^2*u*b_x (p-equation)
+   !are integrated implicitly, together with the relaxation terms, in the source step
+   !(source_terms.py: classic_source_step_EDC).
+   !nc_jump = 1 (SharpClaw, h reconstructed): -c^2*ubar*d(h) instead of -c^2*ubar*d(eta); the source
+   !term in the p-equation is then +2*c^2*u*b_x (source_terms.py: sharpclaw_source_step_EDC).
 
    implicit none
 
    !Input
-   integer :: mu, nv
+   integer :: mu, nv, nc_jump
    double precision :: grav, gamma, c_sq
    double precision :: hl, ul, vl, wl, pl, bl, csq_l
    double precision :: hr, ur, vr, wr, pr, br, csq_r
@@ -644,8 +691,6 @@ subroutine riemann_normal_HypRel_EDC(mu, nv, grav, gamma, c_sq, &
    double precision :: R(5,5), R_inv(5,5)
    double precision :: alpha(5,1), total_fluct(5,1)
    double precision :: bath_correction_term
-
-   double precision :: bath_sharpness_sensor !For stability term
 
    integer :: mw
 
@@ -686,15 +731,18 @@ subroutine riemann_normal_HypRel_EDC(mu, nv, grav, gamma, c_sq, &
    total_fluct(1,1)=hr*ur-hl*ul
    total_fluct(mu,1)=hr*ur**2+hr*pr+0.5d0*grav*hr**2-&
                   hl*ul**2-hl*pl-0.5d0*grav*hl**2+&
-                  (grav*hbar+gamma*pbar)*(br-bl)
+                  grav*hbar*(br-bl)
    total_fluct(nv,1)=ur*hr*vr-ul*hl*vl
    total_fluct(4,1)=ur*hr*wr-ul*hl*wl
 
    total_fluct(5,1)=ur*hr*(pr+csq_r)-ul*hl*(pl+csq_l)!
-   bath_correction_term = -csqbar*ubar*((etaR-etaL)+bath_sharpness_sensor(bl,br)*(br-bl)) 
-   !The last term in the last expression is a consistency/stability term,
-   !it is suppressed when there are large relative bathymetry jumps
-   total_fluct(5,1) = total_fluct(5,1) + bath_correction_term 
+   !c^2*(h*u_x - 2*u*b_x) = c^2*(hu)_x - c^2*u*eta_x - c^2*u*b_x: the last term goes to the source step
+   if (nc_jump == 1) then
+      bath_correction_term = -csqbar*ubar*(hR-hL)
+   else
+      bath_correction_term = -csqbar*ubar*(etaR-etaL)
+   end if
+   total_fluct(5,1) = total_fluct(5,1) + bath_correction_term
 
    !Solving system explicitly for the 5x5 case
    R_inv(:,1)=[ubar*CEbar+grav*hbar,2*(csqbar+pbar),&
@@ -726,6 +774,8 @@ function bath_sharpness_sensor(bL,bR)
    !Computes a sensor to detect sharp bathymetry changes
    !relative to the water depth. Returns a value between 0 and 1
    !Cubic polynomial transition
+   !Only used by the DR solver (riemann_1D_HypRel_DR). EDC and BBBD do not use a sensor:
+   !their non-hydrostatic bathymetry terms are integrated implicitly in the source step.
 
    implicit none
 
@@ -765,7 +815,7 @@ end function bath_sharpness_sensor
 subroutine riemann_normal_HypRel_BBBD(mu, nv, grav, c_sq, &
     hl, ul, vl, wl, sgl, pl, pbl, bl, csq_l,&
     hr, ur, vr, wr, sgr, pr, pbr, br, csq_r, &
-    fw, sw)
+    fw, sw, nc_jump)
 
     !!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     !When used in 2D:
@@ -780,11 +830,21 @@ subroutine riemann_normal_HypRel_BBBD(mu, nv, grav, c_sq, &
     !${CLAW}/riemann/src/geoclaw_riemann_utils.f is probably a better home for this routine
     !I'll leave it here for now
     !!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    !Bathymetry: only the hydrostatic term g*hbar*db (momentum) and
+    !-c^2*ubar*d(eta) (p-equation) are kept here. Every other term proportional to b_x,
+    !  -pb*b_x (momentum),
+    !  -c^2*u*b_x (p-equation; the rest of c^2*h*u_x = c^2*(hu)_x - c^2*u*eta_x + c^2*u*b_x),
+    !  +6*c^2*u*b_x (pb-equation),
+    !is integrated implicitly, together with the relaxation terms, in the source step
+    !(source_terms.py: classic_source_step_BBBD).
+    !nc_jump = 1 (SharpClaw, h reconstructed): -c^2*ubar*d(h) instead of -c^2*ubar*d(eta), i.e. the
+    !p-equation term c^2*h*u_x is complete here and has no source term
+    !(source_terms.py: sharpclaw_source_step_BBBD).
 
     implicit none
 
     !Input
-    integer, intent(in) :: mu, nv
+    integer, intent(in) :: mu, nv, nc_jump
     double precision, intent(in) :: grav, c_sq
     double precision, intent(in) :: hl, ul, vl, wl, pl, bl, csq_l
     double precision, intent(in) :: hr, ur, vr, wr, pr, br, csq_r
@@ -801,9 +861,6 @@ subroutine riemann_normal_HypRel_BBBD(mu, nv, grav, c_sq, &
     double precision :: lamb1bar, lamb7bar
     double precision :: R(7,7), R_inv(7,7)
     double precision :: alpha(7,1), total_fluct(7,1)
-    double precision :: use_full_bath, bath_correction_term(3)
-
-    double precision :: bath_sharpness_sensor !For stability term
 
     integer :: mw
 
@@ -843,24 +900,20 @@ subroutine riemann_normal_HypRel_BBBD(mu, nv, grav, c_sq, &
     delb = br-bl
     !Computing total fluctuation to split in f-waves
     total_fluct(1,1)=hr*ur-hl*ul
-    bath_correction_term(1) = pbbar*delb
     total_fluct(mu,1) = hr*ur**2.d0 +hr*pr+0.5d0*grav*hr**2.d0 &
                     - hl*ul**2.d0 -hl*pl-0.5d0*grav*hl**2.d0 &
                     + grav*hbar*delb
     total_fluct(nv,1)=hr*ur*vr-hl*ul*vl
     total_fluct(4,1)=hr*ur*wr-hl*ul*wl
     total_fluct(5,1)=hr*ur*sgr-hl*ul*sgl
-    bath_correction_term(2) = csqbar*ubar*delb
-    total_fluct(6,1)=hr*ur*(csq_r+pr)-hl*ul*(csq_l+pl)-csqbar*ubar*(etaR-etaL)
-    bath_correction_term(3) = -6.d0*csqbar*ubar*delb
+    if (nc_jump == 1) then
+       total_fluct(6,1)=hr*ur*(csq_r+pr)-hl*ul*(csq_l+pl)-csqbar*ubar*(hr-hl)
+    else
+       total_fluct(6,1)=hr*ur*(csq_r+pr)-hl*ul*(csq_l+pl)-csqbar*ubar*(etaR-etaL)
+    end if
     total_fluct(7,1)=hr*ur*pbr-hl*ul*pbl
 
-    use_full_bath = 1.d0!bath_sharpness_sensor(bl,br)
-    total_fluct(mu,1) = total_fluct(mu,1) + use_full_bath*bath_correction_term(1)
-    total_fluct(6,1) = total_fluct(6,1) + use_full_bath*bath_correction_term(2)
-    total_fluct(7,1) = total_fluct(7,1) + use_full_bath*bath_correction_term(3)
 
-    
     R_inv(:,1)=(1.d0/CEbar**2.d0)*[0.5d0*(grav*hbar+CEbar*ubar),&
     csqbar+pbar, -grav*hbar*sgbar, -grav*hbar*wbar, -grav*hbar*vbar,&
     -grav*hbar*pbbar,0.5d0*(grav*hbar-CEbar*ubar)]

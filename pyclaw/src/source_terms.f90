@@ -2,96 +2,113 @@ module source_terms_module
     implicit none
     contains
 
-subroutine src_EDC_1D(q,qout,dt,csq,gamma,mx)
+!---------------------------------------------------------------------
+!Source steps for EDC (mbHSGN) and BBBD (HSGN).
+!The Riemann solver (rp1_dispersive_SWEs_fwave_splitting.f90) only contains the hydrostatic
+!bathymetry term and -c^2*ubar*\partial_x(eta). The non-hydrostatic bathymetry terms are integrated here,
+!implicitly and together with the relaxation terms:
+!one SDIRK(2,2) step of a local linear system per cell, with h frozen and b_x = cell-centred
+!bottom slope (source_terms.py: cell_centred_bx). The local systems are neutral for any b_x, so
+!the step is stable for any dt and any (under-resolved) bathymetry jump.
+!---------------------------------------------------------------------
+
+subroutine src_EDC_1D(q,bx,qout,dt,csq,gamma,mx)
+    !Integrates, cell by cell with h frozen, the linear system for (u,w,p)
+    !     u_t = -gamma b_x p / h
+    !     w_t =  gamma     p / h
+    !     p_t =  c^2 b_x u / h - 2 c^2 w / h
+    !i.e. the relaxation source plus the two non-hydrostatic bathymetry terms of mbHSGN with SDIRK(2,2).
     implicit none
     integer, intent(in) :: mx
     double precision, intent(in) :: dt
-    double precision, intent(in) :: q(4,mx)
+    double precision, intent(in) :: q(4,mx), bx(mx)
     double precision, intent(in) :: gamma, csq
     double precision, intent(out) :: qout(4,mx)
 
     !Locals
     integer :: i
-    double precision :: h,hw,hp
+    double precision :: h,hu,hw,hp
 
     do i=1,mx
         !Copy input to output
         qout(:,i) = q(:,i)
         h = q(1,i)
+        hu = q(2,i)
         hw = q(3,i)
         hp = q(4,i)
-        !Exact integration of Source terms for EDC and BBBD systems
-        ! call one_exact_step_EDC(h,hw,hp,csq,gamma,dt)
-        ! call one_step_BE_EDC(h,hw,hp,csq,gamma,dt)
-        call one_step_SDIRK22_EDC(h,hw,hp,csq,gamma,dt)
-        ! call one_step_RKGL4_EDC(h,hw,hp,csq,gamma,dt)
+        call one_step_SDIRK22_EDC(h,hu,hw,hp,bx(i),csq,gamma,dt)
         !Update output
+        qout(2,i) = hu
         qout(3,i) = hw
         qout(4,i) = hp
     end do
 
 end subroutine src_EDC_1D
 
-subroutine src_EDC_1D_radial(q,r,qout,dt,csq,gamma,mx)
+subroutine src_EDC_1D_radial(q,r,bx,qout,dt,csq,gamma,mx)
+    !As src_EDC_1D (bx = d(b)/dr), followed by the explicit radial terms
     implicit none
     integer, intent(in) :: mx
     double precision, intent(in) :: dt
     double precision, intent(in) :: q(4,mx)
-    double precision, intent(in) :: r(mx)
+    double precision, intent(in) :: r(mx), bx(mx)
     double precision, intent(in) :: gamma, csq
     double precision, intent(out) :: qout(4,mx)
 
     !Locals
     integer :: i
-    double precision :: h,hw,hp
+    double precision :: h,hu,hw,hp
     double precision ::ratio,u
 
     do i=1,mx
         !Copy input to output
         qout(:,i) = q(:,i)
         h = q(1,i)
+        hu = q(2,i)
         hw = q(3,i)
         hp = q(4,i)
-        !Exact integration of Source terms for EDC and BBBD systems
-        ! call one_exact_step_EDC(h,hw,hp,csq,gamma,dt)
-        call one_step_SDIRK22_EDC(h,hw,hp,csq,gamma,dt)
-        !Update output
-        qout(3,i) = hw
-        qout(4,i) = hp
+        call one_step_SDIRK22_EDC(h,hu,hw,hp,bx(i),csq,gamma,dt)
         !Radial terms
         ratio = dt/r(i)
         qout(1,i) = h-ratio*q(2,i)
         u = q(2,i)/h
-        qout(2,i) = q(2,i)-ratio*(h*u**2)
+        qout(2,i) = hu-ratio*(h*u**2)
         qout(3,i) = hw - ratio*u*hw
         qout(4,i) = hp - ratio*(u*hp+h*u*csq)
     end do
 end subroutine src_EDC_1D_radial
 
-subroutine src_BBBD_1D(q,qout,dt,csq,mx)
+subroutine src_BBBD_1D(q,bx,qout,dt,csq,mx)
+    !Integrates, cell by cell with h frozen, the linear system for y = (u,w,sg,p,pb)
+    !     u_t  = -b_x pb / h
+    !     w_t  =  pb / h
+    !     sg_t = (12 p - 6 pb) / h
+    !     p_t  = (-c^2 sg - c^2 b_x u) / h
+    !     pb_t = (6 c^2 b_x u - 6 c^2 w + 3 c^2 sg) / h
+    !i.e. the relaxation source plus the bathymetry terms that are not in the Riemann solver  with SDIRK(2,2).
     implicit none
     integer, intent(in) :: mx
     double precision, intent(in) :: dt
-    double precision, intent(in) :: q(6,mx)
+    double precision, intent(in) :: q(6,mx), bx(mx)
     double precision, intent(in) :: csq
     double precision, intent(out) :: qout(6,mx)
 
     !Locals
     integer :: i
-    double precision :: h,hw,hsg,hp,hpb
+    double precision :: h,hu,hw,hsg,hp,hpb
 
     do i=1,mx
         !Copy input to output
         qout(:,i) = q(:,i)
         h = q(1,i)
+        hu = q(2,i)
         hw = q(3,i)
         hsg = q(4,i)
         hp = q(5,i)
         hpb = q(6,i)
-        !Exact integration of Source terms for EDC and BBBD systems
-        ! call one_exact_step_BBBD(h,hw,hsg,hp,hpb,csq,dt)
-        call one_step_SDIRK22_BBBD(h,hw,hsg,hp,hpb,csq,dt)
+        call one_step_SDIRK22_BBBD(h,hu,hw,hsg,hp,hpb,bx(i),csq,dt)
         !Update output
+        qout(2,i) = hu
         qout(3,i) = hw
         qout(4,i) = hsg
         qout(5,i) = hp
@@ -100,40 +117,36 @@ subroutine src_BBBD_1D(q,qout,dt,csq,mx)
 
 end subroutine src_BBBD_1D
 
-subroutine src_BBBD_1D_radial(q,r,qout,dt,csq,mx)
+subroutine src_BBBD_1D_radial(q,r,bx,qout,dt,csq,mx)
+    !As src_BBBD_1D (bx = d(b)/dr), followed by the explicit radial terms
     implicit none
     integer, intent(in) :: mx
     double precision, intent(in) :: dt
     double precision, intent(in) :: q(6,mx)
-    double precision, intent(in) :: r(mx)
+    double precision, intent(in) :: r(mx), bx(mx)
     double precision, intent(in) :: csq
     double precision, intent(out) :: qout(6,mx)
 
     !Locals
     integer :: i
-    double precision :: h,hw,hsg,hp,hpb
+    double precision :: h,hu,hw,hsg,hp,hpb
     double precision :: ratio,u
 
     do i=1,mx
         !Copy input to output
         qout(:,i) = q(:,i)
         h = q(1,i)
+        hu = q(2,i)
         hw = q(3,i)
         hsg = q(4,i)
         hp = q(5,i)
         hpb = q(6,i)
-        !Exact integration of Source terms for EDC and BBBD systems
-        call one_exact_step_BBBD(h,hw,hsg,hp,hpb,csq,dt)
-        !Update output
-        qout(3,i) = hw
-        qout(4,i) = hsg
-        qout(5,i) = hp
-        qout(6,i) = hpb
+        call one_step_SDIRK22_BBBD(h,hu,hw,hsg,hp,hpb,bx(i),csq,dt)
         !Radial terms
         ratio = dt/r(i)
         qout(1,i) = h-ratio*q(2,i)
         u = q(2,i)/h
-        qout(2,i) = q(2,i)-ratio*(h*u**2)
+        qout(2,i) = hu-ratio*(h*u**2)
         qout(3,i) = hw - ratio*u*hw
         qout(4,i) = hsg - ratio*u*hsg
         qout(5,i) = hp - ratio*(u*hp+h*u*csq)
@@ -170,7 +183,7 @@ subroutine src_DR_1D(q,qout,dt,csq,mx)
 end subroutine src_DR_1D
 
 !---------------------------------------------------------------------
-!Exact integration of Source terms for EDC and BBBD systems
+!Exact integration of the relaxation terms (flat bottom; used by the DR system only)
 !---------------------------------------------------------------------
 subroutine one_exact_step_EDC(h, hw, hp, csq_space, gammaEDC,dt)
     implicit none
@@ -202,142 +215,78 @@ subroutine one_exact_step_EDC(h, hw, hp, csq_space, gammaEDC,dt)
     hp = result(2,1)*h
 end subroutine one_exact_step_EDC
 
-subroutine one_step_BE_EDC(h, hw, hp, csq_space,gammaEDC, dt)
-            !A backward Euler step for the EDC equations
-            implicit none
-            double precision, intent(in) :: h, csq_space,gammaEDC, dt
-            double precision, intent(inout) :: hw, hp
-            !Locals
-            double precision :: p,w
-            double precision ::denom,b,c
-            w = hw/h
-            p = hp/h
-            denom = 1.d0 + (dt*dt*2.d0*csq_space*gammaEDC)/(h*h)
-            b = dt*gammaEDC/h
-            c = -2.d0*dt*csq_space/h
-            !Output (Inverting the matrix explicitly and multiplying back h)
-            hw = h*(w + b*p)/denom 
-            hp = h*(c*w + p)/denom
-end subroutine one_step_BE_EDC
-
-
-subroutine one_step_SDIRK22_EDC(h, hw, hp, csq_space, gammaEDC, dt)
-    !Take one step using the SDIRK2(2) method
-    !Intended to solve q_t = A(q) with A(q) = A*q
-    !And q = (w,p), 
+subroutine one_step_SDIRK22_EDC(h, hu, hw, hp, bx, csq_space, gammaEDC, dt)
+    !SDIRK(2,2) step for y=(u,w,p), y' = A y with A = [[0,0,a],[0,0,b],[c,d,0]],
+    !a = -gamma bx/h, b = gamma/h, c = c^2 bx/h, d = -2 c^2/h  (see src_EDC_1D).
+    !(I - G dt A) y = r is solved in closed form (det = 1 - (G dt)^2 (ac+bd) >= 1).
     implicit none
-    double precision, intent(in) :: h, csq_space, gammaEDC, dt
-    double precision, intent(inout) :: hw, hp
-    !Matrix handling
-    double precision, dimension(2,2) :: A
-    double precision, dimension(2) :: qn, qnp1
+    double precision, intent(in) :: h, bx, csq_space, gammaEDC, dt
+    double precision, intent(inout) :: hu, hw, hp
+    double precision :: a, b, c, d, G, k, den
+    double precision :: u, w, p, u1, w1, p1, u2, w2, p2
 
     if (h<1.e-3 .or. csq_space < 1.e-3) then
         !Do nothing
         return
     end if
-    qn = (/hw/h,hp/h/)
-    A = 0.d0
-    A(1,2) = gammaEDC/h
-    A(2,1) = -2*csq_space/h
-
-    call one_general_sdirk2_step(dt,A,qn,qnp1)
-    hw = qnp1(1)*h
-    hp = qnp1(2)*h
+    u = hu/h
+    w = hw/h
+    p = hp/h
+    a = -gammaEDC*bx/h
+    b = gammaEDC/h
+    c = csq_space*bx/h
+    d = -2.d0*csq_space/h
+    G = (1.d0 - 1.d0/dsqrt(2.d0))*dt
+    k = dt - G
+    den = 1.d0 - G*G*(a*c + b*d)
+    !Stage 1: (I - G A) y1 = y
+    p1 = (p + G*c*u + G*d*w)/den
+    u1 = u + G*a*p1
+    w1 = w + G*b*p1
+    !Stage 2: (I - G A) y2 = y + (dt-G) A y1
+    u = u + k*a*p1
+    w = w + k*b*p1
+    p = p + k*(c*u1 + d*w1)
+    p2 = (p + G*c*u + G*d*w)/den
+    u2 = u + G*a*p2
+    w2 = w + G*b*p2
+    hu = u2*h
+    hw = w2*h
+    hp = p2*h
 end subroutine one_step_SDIRK22_EDC
 
-subroutine one_exact_step_BBBD(h, hw, hsg, hp, hpb, csq_space, dt)
+subroutine one_step_SDIRK22_BBBD(h, hu, hw, hsg, hp, hpb, bx, csq_space, dt)
+    !SDIRK(2,2) step for y = (u,w,sg,p,pb), y' = A y (see src_BBBD_1D).
+    !With bx = 0 it is the SDIRK(2,2) step of the relaxation terms alone.
     implicit none
-
-    double precision, intent(in) :: h, csq_space, dt
-    double precision, intent(inout) :: hw, hsg, hp, hpb
-    !Locals
-    complex(kind=8) :: q(4,1)
-    complex(kind=8) :: R(4,4), Diag(4), Rinv(4,4)
-    complex(kind=8) :: z,sq7,a1,a2,a3,a4,a5,a6,a7,a8,c
-    complex(kind=8) :: img = cmplx(0.d0,1.d0)
-    integer :: i,j
-    integer :: ipiv(4), info
-
-
-    c = sqrt(csq_space)
-    sq7 = sqrt(7.d0)
-    a1 = 3.d0 + sq7
-    a2 = -3.d0 + sq7
-    a3 = 2.d0 + sq7
-    a4 = -2.d0 + sq7
-    a5 = 1.d0 - sq7
-    a6 = 1.d0 + sq7
-    a7 = sqrt(2.d0 - 2.d0*sq7/3.d0)
-    a8 = sqrt(1.d0 - sq7/3.d0)
-
-    R(1,:) = (1.d0/sqrt(6.d0))*(/img/sqrt(a1),-img/sqrt(a1),img/sqrt(-a2),1.d0/sqrt(a2)/)
-    R(2,:) = (/ -img*a3*a8, img*a3*a8, -img*a4*a7/a2, img*a4*a7/a2 /)
-    R(3,:) = (c/6.d0)*(/ a5, a5, a6, a6 /)
-    R(4,:) = (/ c,c,c,c/)
-
-    Diag = (dt*sqrt(6.d0)*c/h)*(/ -img*sqrt(a1),img*sqrt(a1),-sqrt(a2),sqrt(a2) /)
-
-    !Initial conditions
-    q(:,1) = (/hw,hsg,hp,hpb/)/h
-    !More efficient matmul
-    !!!!!!!!!!!!
-    !Old approach (numerically unstable)
-    ! Rinv = complmatinv4(R) 
-    !q = matmul(Rinv,q)
-    !!!!!!!!!!!!
-    ! Now use LAPACK to solve the linear system
-    call zgesv(4, 1, R, 4, ipiv, q, 4, info)
-    if (info /= 0) then
-        print *, "ZGESV failed in one_exact_step_BBBD, info =", info
-        stop
-    end if
-    do i=1,4
-        q(i,1)=exp(Diag(i))*q(i,1)
-    end do
-    ! Multiply by R again (using matmul)
-    ! since we overwrote R with LU factors, we rebuild it:
-    R(1,:) = (1.d0/sqrt(6.d0))*(/img/sqrt(a1),-img/sqrt(a1),img/sqrt(-a2),1.d0/sqrt(a2)/)
-    R(2,:) = (/ -img*a3*a8, img*a3*a8, -img*a4*a7/a2, img*a4*a7/a2 /)
-    R(3,:) = (c/6.d0)*(/ a5, a5, a6, a6 /)
-    R(4,:) = (/ c,c,c,c/)
-
-    q = matmul(R,q)
-    hw  = RealPart(q(1,1))*h
-    hsg = RealPart(q(2,1))*h
-    hp  = RealPart(q(3,1))*h
-    hpb = RealPart(q(4,1))*h
-end subroutine one_exact_step_BBBD
-
-subroutine one_step_SDIRK22_BBBD(h, hw, hsg, hp, hpb, csq_space, dt)
-    !Take one step using the SDIRK2(2) method
-    !Intended to solve q_t = A(q) with A(q) = A*q
-    !And q = (w,sg,p,pb), 
-    implicit none
-    double precision, intent(in) :: h, csq_space, dt
-    double precision, intent(inout) :: hw, hsg, hp, hpb
+    double precision, intent(in) :: h, bx, csq_space, dt
+    double precision, intent(inout) :: hu, hw, hsg, hp, hpb
     !Matrix handling
-    double precision, dimension(4,4) :: A
-    double precision, dimension(4) :: qn, qnp1
+    double precision, dimension(5,5) :: A
+    double precision, dimension(5) :: qn, qnp1
 
     if (h<1.e-3 .or. csq_space < 1.e-3) then
         !Do nothing
         return
     end if
-    qn = (/hw/h,hsg/h,hp/h,hpb/h/)
+    qn = (/hu/h, hw/h, hsg/h, hp/h, hpb/h/)
     A = 0.d0
-    A(1,4) = 1.d0/h
-    A(2,3) = 12.d0/h
-    A(2,4) = -6.d0/h
-    A(3,2) = -csq_space/h
-    A(4,1) = -6.d0*csq_space/h
-    A(4,2) = 3.d0*csq_space/h
+    A(1,5) = -bx/h
+    A(2,5) = 1.d0/h
+    A(3,4) = 12.d0/h
+    A(3,5) = -6.d0/h
+    A(4,1) = -csq_space*bx/h
+    A(4,3) = -csq_space/h
+    A(5,1) = 6.d0*csq_space*bx/h
+    A(5,2) = -6.d0*csq_space/h
+    A(5,3) = 3.d0*csq_space/h
 
     call one_general_sdirk2_step(dt,A,qn,qnp1)
-    hw = qnp1(1)*h
-    hsg = qnp1(2)*h
-    hp = qnp1(3)*h
-    hpb = qnp1(4)*h
+    hu  = qnp1(1)*h
+    hw  = qnp1(2)*h
+    hsg = qnp1(3)*h
+    hp  = qnp1(4)*h
+    hpb = qnp1(5)*h
 end subroutine one_step_SDIRK22_BBBD
 
 subroutine one_general_sdirk2_step(dt, A, qn, qnp1)
