@@ -93,7 +93,7 @@ def setrun(claw_pkg='geoclaw'):
 
     # To use Boussinesq solver, add bouss_data parameters here
     # Also make sure to use the correct Makefile pointing to bouss version
-    # Use the local data.py (BoussData1D with bouss_EDC_c_sq / bouss_EDC_gamma); the stock
+    # Use the local data.py (BoussData1D with bouss_EDC_alpha / bouss_EDC_gamma); the stock
     # clawpack.geoclaw.data.BoussData1D does not define these attributes.
     local_geoclaw = os.environ["LOCALGEOCLAW"]
     sys.path.append(os.path.join(local_geoclaw,'src','python','geoclaw'))
@@ -103,8 +103,8 @@ def setrun(claw_pkg='geoclaw'):
     rundata.bouss_data.bouss_equations = 0    # 0=SWE, 1=MS, 2=SGN, -1=EDC    #flag_bouss_data.bouss_equations PLEASE DO NOT DELETE THIS COMMENT
     rundata.bouss_data.bouss_min_depth = -10000  # depth to switch to SWE
     alpha = 3.0           #flag_EDC_alpha PLEASE DO NOT DELETE THIS COMMENT
-    h0 = 0.5; g = 9.81 #Computing relaxation parameter as suggested in Escalante et al. (2019)
-    rundata.bouss_data.bouss_EDC_c_sq = (alpha**2)*h0*g
+    # c^2 = alpha^2 * g * H is computed in setaux, with H the local depth at rest (0.5 m here)
+    rundata.bouss_data.bouss_EDC_alpha = alpha
     rundata.bouss_data.bouss_EDC_gamma = 1.5
 
     # ---------------
@@ -128,7 +128,7 @@ def setrun(claw_pkg='geoclaw'):
 
 
     # Number of auxiliary variables in the aux array (initialized in setaux)
-    clawdata.num_aux = 2
+    clawdata.num_aux = 4    # topography, capacity, c^2, SWE/Boussinesq indicator (see setaux)
 
     # Index of aux array corresponding to capacity function, if there is one:
     clawdata.capa_index = 2
@@ -281,6 +281,11 @@ def setrun(claw_pkg='geoclaw'):
     geo_data.manning_coefficient =.025
 
     geo_data.coordinate_system = 1  # linear distance (meters)
+
+    # Reference level for the relaxation parameter c^2 = alpha^2 g H, H = sea_level - b:
+    # with the bottom at b = -1 this gives H = 0.5 m (the reference depth used before, h0 = 0.5).
+    # The water levels themselves are set in qinit.f90 (H1, H2), independently of sea_level.
+    geo_data.sea_level = -0.5
 
     topo_data = rundata.topo_data
     topo_data.topofiles.append([1, fname_celledges])
