@@ -17,15 +17,16 @@ COMMON_SOURCES += \
   $(LOCALGEOLIB)/claw1.f \
   $(LOCALBOUSSLIB)/rp1_bouss_geoclaw.f90 \
   $(LOCALGEOLIB)/bc1.f \
-  $(LOCALGEOLIB)/setaux.f \
+  $(LOCALBOUSSLIB)/setaux.f90 \
   $(LOCALGEOLIB)/out1.f \
   $(LOCALGEOLIB)/setprob.f90 \
-  $(LOCALGEOLIB)/b4step1.f90 \
+  $(LOCALBOUSSLIB)/b4step1.f90 \
   $(LOCALGEOLIB)/qinit.f90 \
   $(LOCALBOUSSLIB)/src1.f90 \
   $(CLAW)/classic/src/1d/driver.f90 \
-  $(CLAW)/classic/src/1d/inlinelimiter.f90 \
+  $(LOCALBOUSSLIB)/limiter_strength.f90 \
   $(CLAW)/classic/src/1d/step1.f90 \
   $(CLAW)/classic/src/1d/copyq1.f \
   $(CLAW)/classic/src/1d/opendatafile.f \
   $(CLAW)/riemann/src/geoclaw_riemann_utils.f \
+  

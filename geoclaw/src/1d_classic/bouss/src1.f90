@@ -19,9 +19,11 @@ subroutine src1(meqn,mbc,mx,xlower,dx,q,maux,aux,t,dt)
                       solve_tridiag_ms, build_tridiag_sgn, &
                       solve_tridiag_sgn, useBouss
     !Parameters for Hyperbolic Relaxation EDC
-    use bouss_module, only: c_sq => boussEDCcsq !Reference hyperbolic relaxation parameter
+    !Local relaxation parameter c^2 and SWE/Boussinesq indicator (aux, set in setaux)
+    use bouss_module, only: csq_index => bouss_csq_index, dr_index => boussDecayRate_index
+    use bouss_module, only: small_tol_bouss
     use bouss_module, only: gammaEDC => boussEDCgamma !Approximate SGN (3/2) or Sainte-Marie equations (2)
-    use bouss_module, only: S_BBBD => Source_HypRel_BBBD !Source term function for BBBD
+    use bouss_module, only: sdirk22_edc, sdirk22_bbbd !Local implicit source steps
 
     implicit none
     integer, intent(in) :: mbc,mx,meqn,maux
@@ -47,6 +49,8 @@ subroutine src1(meqn,mbc,mx,xlower,dx,q,maux,aux,t,dt)
     !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     !Local BBBD
     double precision :: hwout, hsgout, hpout, hpbout
+    !Gradients of the bathymetry and of c^2 at cell centres
+    double precision :: bx
 
     if (frictioncoeff.gt.0.d0 .and. friction_forcing) then
           ! integrate source term based on Manning formula
@@ -84,9 +88,9 @@ subroutine src1(meqn,mbc,mx,xlower,dx,q,maux,aux,t,dt)
                 q(1,i) = h - dt/xcell(i) * q(2,i)
                 u = q(2,i)/h
                 q(2,i) = q(2,i) - dt/xcell(i) * h*u**2
-                if (useBouss(i)) then
+                if (aux(dr_index,i) > small_tol_bouss) then
                     q(3,i) = q(3,i) - dt/xcell(i) * u*q(3,i)
-                    q(4,i) = q(4,i) - dt/xcell(i) * (u*q(4,i)+h*u*c_sq)
+                    q(4,i) = q(4,i) - dt/xcell(i) * (u*q(4,i)+h*u*aux(csq_index,i))
                 end if
             end if
         enddo
@@ -101,10 +105,10 @@ subroutine src1(meqn,mbc,mx,xlower,dx,q,maux,aux,t,dt)
                 q(1,i) = h - dt/xcell(i) * q(2,i)
                 u = q(2,i)/h
                 q(2,i) = q(2,i) - dt/xcell(i) * h*u**2
-                if (useBouss(i)) then
+                if (aux(dr_index,i) > small_tol_bouss) then
                     q(3,i) = q(3,i) - dt/xcell(i) * u*q(3,i)
                     q(4,i) = q(4,i) - dt/xcell(i) * u*q(4,i)
-                    q(5,i) = q(5,i) - dt/xcell(i) * (u*q(5,i)+h*u*c_sq)
+                    q(5,i) = q(5,i) - dt/xcell(i) * (u*q(5,i)+h*u*aux(csq_index,i))
                     q(6,i) = q(6,i) - dt/xcell(i) * u*q(6,i)
                 end if
             end if
@@ -207,331 +211,82 @@ subroutine src1(meqn,mbc,mx,xlower,dx,q,maux,aux,t,dt)
     endif ! end of Bouss terms
 
     ! -------------------------------------------------
-    if (boussEquations == -1) then
-    !Boussinesq terms for HypRel EDC
-        do i=2-mbc,mx+mbc-1 !i=1,mx+mbc
-            if (useBouss(i)) then
-                ! call one_exact_step_EDC(q(1,i), q(3,i), q(4,i), c_sq, dt)
-                call one_step_SDIRK22_EDC(q(1,i), q(3,i), q(4,i), c_sq, dt)
-            endif
-        end do
-    end if
-    if (boussEquations == -2) then
-    !Boussinesq terms for HypRel BBBD 
-        do i=2-mbc,mx+mbc-1 !i=1,mx+mbc
-            if (useBouss(i)) then
-                 call one_step_SDIRK22_BBBD(q(1,i), q(3,i), q(4,i), q(5,i), q(6,i),&
-                                     c_sq, dt)
-                ! call one_step_BE_BBBD(q(1,i), q(3,i), q(4,i), q(5,i), q(6,i),&
-                !                      c_sq, dt)
-                ! call one_step_RKGL4_BBBD(q(1,i), q(3,i), q(4,i), q(5,i), q(6,i), c_sq, dt)
+    !Hyperbolic relaxation systems (EDC = mbHSGN, BBBD = HSGN): relaxation terms AND the
+    !non-hydrostatic bathymetry terms, which are not in the Riemann solver,
+    !integrated implicitly with one SDIRK(2,2) step of a local linear system
+    !per cell (closed form, h frozen). Stable for any dt and any bathymetry jump.
+    !b_x at cell centres from the physical cell centres xcell (non-uniform grids): the 3-point
+    !formula of bouss_module (cm1, c01, cp1; = centred difference on uniform grids).
+    !c^2 = aux(csq_index), the cell value (alpha^2 g H, set in setaux; 0 where the SWEs are solved).
+    !The p-equation is in non-conservative form (c^2 outside the divergence), so there is no c^2_x
+    !term: c^2 (hu)_x is in the (transmission-type) Riemann solver, which also handles the jump of
+    !c^2 to 0 at the SWE/Boussinesq switch.
+    !Only where the dispersive system is solved (aux(dr_index) = 1, as useBouss).
+    if (boussEquations == -1 .or. boussEquations == -2) then
+        do i=max(2-mbc,0),min(mx+mbc-1,mx+1) !i=1,mx+mbc
+            if (aux(dr_index,i) > small_tol_bouss) then
+                bx = cm1(i)*aux(1,i-1) + c01(i)*aux(1,i) + cp1(i)*aux(1,i+1)
+                if (boussEquations == -1) then
+                    call one_step_SDIRK22_EDC_1D(q(1,i), q(2,i), q(3,i), q(4,i), bx, &
+                                              aux(csq_index,i), dt)
+                else
+                    call one_step_SDIRK22_BBBD_1D(q(1,i), q(2,i), q(3,i), q(4,i), q(5,i), q(6,i),&
+                                               bx, aux(csq_index,i), dt)
+                endif
             endif
         end do
     end if
 
     contains
 
-        subroutine one_step_BE_EDC(h, hw, hp, csq_space, dt)
-            !A backward Euler step for the EDC equations
+        subroutine one_step_SDIRK22_EDC_1D(h, hu, hw, hp, bx, csq_space, dt)
+            !One SDIRK(2,2) step for y = (u,w,p) (h frozen):
+            !  u_t = -gamma b_x p/h,  w_t = gamma p/h,  p_t = (c^2 b_x u - 2 c^2 w)/h
             implicit none
-            double precision, intent(in) :: h, csq_space, dt
-            double precision, intent(inout) :: hw, hp
-            !Locals
-            double precision :: p,w
-            double precision ::denom,b,c
-            w = hw/h
-            p = hp/h
-            denom = 1.d0 + (dt*dt*2.d0*csq_space*gammaEDC)/(h*h)
-            b = dt*gammaEDC/h
-            c = -2.d0*dt*csq_space/h
-            !Output (Inverting the matrix explicitly and multiplying back h)
-            hw = h*(w + b*p)/denom 
-            hp = h*(c*w + p)/denom
-        end subroutine one_step_BE_EDC
-
-        subroutine one_step_SDIRK22_EDC(h, hw, hp, csq_space, dt)
-            !Take one step using the SDIRK2(2) method
-            !Intended to solve q_t = A(q) with A(q) = A*q
-            !And q = (w,p), 
-            implicit none
-            double precision, intent(in) :: h, csq_space, dt
-            double precision, intent(inout) :: hw, hp
-            !Matrix handling
-            double precision, dimension(2,2) :: A
-            double precision, dimension(2) :: qn, qnp1
+            double precision, intent(in) :: h, bx, csq_space, dt
+            double precision, intent(inout) :: hu, hw, hp
+            double precision :: u, v, w, p
 
             if (h<dry_tolerance .or. csq_space < 1.e-6) then
                 !Do nothing
                 return
             end if
-            qn = (/hw/h,hp/h/)
-            A = 0.d0
-            A(1,2) = gammaEDC/h
-            A(2,1) = -2*csq_space/h
-
-            call one_general_sdirk2_step(dt,A,qn,qnp1)
-            hw = qnp1(1)*h
-            hp = qnp1(2)*h
-
-        end subroutine one_step_SDIRK22_EDC
-
-        subroutine one_exact_step_EDC(h, hw, hp, csq_space, dt)
-            implicit none
-            double precision, intent(in) :: h, csq_space, dt
-            double precision, intent(inout) :: hw, hp
-            !Locals
-            double precision :: p,w,expdtA(2,2),result(2,1)
-            double precision :: b, posc
+            u = hu/h
+            v = 0.d0
             w = hw/h
             p = hp/h
-            posc = dt*2.d0*csq_space/h
-            b = dt*gammaEDC/h
-            !Calculate the exact solution for the half problem:
-            !(w,p)_t = h^{-1}(gamma*p,-2*csq*w) = A(p,w),
-            !where A= [[0,gamma],[-2*csq,0]]/h.
-            !The exact solution is given by:
-            !(w,p)(dt) = exp(dt*A)*(w,p)(0).
-            expdtA(1,1) = cos(dsqrt(b*posc)) !cosh(i*a) = cos(a)
-            expdtA(1,2) = dsqrt(b/posc)*sin(dsqrt(b*posc)) !sinh(i*a) = i*sin(a)
-            expdta(2,1) = -dsqrt(posc/b)*sin(dsqrt(b*posc)) !sin(i*a) = i*sinh(a)
-            expdtA(2,2) = cos(dsqrt(b*posc)) !cosh(i*a) = cos(a)
-            result(:,1) = (/w,p/)
-            result = matmul(expdtA,result)
-            !Compute w,p
-            ! w = expdtA(1,1)*w + expdtA(1,2)*p
-            ! p = expdtA(2,1)*w + expdtA(2,2)*p
-            !Output
-            hw = result(1,1)*h
-            hp = result(2,1)*h
-        end subroutine one_exact_step_EDC
+            call sdirk22_edc(h, u, v, w, p, bx, 0.d0, csq_space, gammaEDC, dt)
+            hu = h*u
+            hw = h*w
+            hp = h*p
+        end subroutine one_step_SDIRK22_EDC_1D
 
-        subroutine one_exact_step_BBBD(h, hw, hsg, hp, hpb, csq_space, dt)
+        subroutine one_step_SDIRK22_BBBD_1D(h, hu, hw, hsg, hp, hpb, bx, csq_space, dt)
+            !One SDIRK(2,2) step for y = (u,w,sg,p,pb) (h frozen):
+            !  u_t = -b_x pb/h,  w_t = pb/h,  sg_t = (12 p - 6 pb)/h,
+            !  p_t = (-c^2 sg - c^2 b_x u)/h,  pb_t = (6 c^2 b_x u - 6 c^2 w + 3 c^2 sg)/h
             implicit none
-
-            double precision, intent(in) :: h, csq_space, dt
-            double precision, intent(inout) :: hw, hsg, hp, hpb
-            !Locals
-            complex(kind=8) :: q(4,1)
-            complex(kind=8) :: R(4,4), Diag(4), Rinv(4,4)
-            complex(kind=8) :: z,sq7,a1,a2,a3,a4,a5,a6,a7,a8,c
-            complex(kind=8) :: img = cmplx(0.d0,1.d0)
-            integer :: i,j
-            integer :: ipiv(4), info
-
-
-            c = sqrt(csq_space)
-            sq7 = sqrt(7.d0)
-            a1 = 3.d0 + sq7
-            a2 = -3.d0 + sq7
-            a3 = 2.d0 + sq7
-            a4 = -2.d0 + sq7
-            a5 = 1.d0 - sq7
-            a6 = 1.d0 + sq7
-            a7 = sqrt(2.d0 - 2.d0*sq7/3.d0)
-            a8 = sqrt(1.d0 - sq7/3.d0)
-
-            R(1,:) = (1.d0/sqrt(6.d0))*(/img/sqrt(a1),-img/sqrt(a1),img/sqrt(-a2),1.d0/sqrt(a2)/)
-            R(2,:) = (/ -img*a3*a8, img*a3*a8, -img*a4*a7/a2, img*a4*a7/a2 /)
-            R(3,:) = (c/6.d0)*(/ a5, a5, a6, a6 /)
-            R(4,:) = (/ c,c,c,c/)
-
-            Diag = (dt*sqrt(6.d0)*c/h)*(/ -img*sqrt(a1),img*sqrt(a1),-sqrt(a2),sqrt(a2) /)
-
-            !Initial conditions
-            q(:,1) = (/hw,hsg,hp,hpb/)/h
-            !More efficient matmul
-            !!!!!!!!!!!!
-            !Old approach (numerically unstable)
-            ! Rinv = complmatinv4(R) 
-            !q = matmul(Rinv,q)
-            !!!!!!!!!!!!
-            ! Now use LAPACK to solve the linear system
-            call zgesv(4, 1, R, 4, ipiv, q, 4, info)
-            if (info /= 0) then
-                print *, "ZGESV failed in one_exact_step_BBBD, info =", info
-                stop
-            end if
-            do i=1,4
-                q(i,1)=exp(Diag(i))*q(i,1)
-            end do
-            ! Multiply by R again (using matmul)
-            ! since we overwrote R with LU factors, we rebuild it:
-            R(1,:) = (1.d0/sqrt(6.d0))*(/img/sqrt(a1),-img/sqrt(a1),img/sqrt(-a2),1.d0/sqrt(a2)/)
-            R(2,:) = (/ -img*a3*a8, img*a3*a8, -img*a4*a7/a2, img*a4*a7/a2 /)
-            R(3,:) = (c/6.d0)*(/ a5, a5, a6, a6 /)
-            R(4,:) = (/ c,c,c,c/)
-
-            q = matmul(R,q)
-            hw  = RealPart(q(1,1))*h
-            hsg = RealPart(q(2,1))*h
-            hp  = RealPart(q(3,1))*h
-            hpb = RealPart(q(4,1))*h
-        end subroutine one_exact_step_BBBD
-
-        subroutine one_step_BE_BBBD(h, hw, hsg, hp, hpb, csq_space, dt)
-            !A backward Euler step for the BBBD equations
-            implicit none
-            double precision, intent(in) :: h, csq_space, dt
-            double precision, intent(inout) :: hw, hsg, hp, hpb
-            !Locals
-            double precision ::w,sg,p,pb
-            double precision :: A(4,4),qn(4)
-            integer :: i,j,info,ipiv(4),lda,ldb,nrhs
-            ! For LAPACK external declarations (typical usage)
-            external dgetrf, dgetrs
-
-            qn = (/hw/h,hsg/h,hp/h,hpb/h/)
-            A = 0.d0
-            A(1,4) = 1.d0/h
-            A(2,3) = 12.d0/h
-            A(2,4) = -6.d0/h
-            A(3,2) = -csq_space/h
-            A(4,1) = -6.d0*csq_space/h
-            A(4,2) = 3.d0*csq_space/h
-            !Form the matrix M = I - dt*A
-            A = -dt*A
-            do i = 1, size(A,1)
-                A(i,i) = A(i,i) + 1.0d0
-            end do
-            !Solve M*qnew = qn
-            ! For LAPACK external declarations
-            lda = 4
-            ldb = 4
-            nrhs = 1
-            ! LU factorization of M (overwrites A with LU factors)
-            call dgetrf(4, 4, A, lda, ipiv, info)
-            if (info /= 0) then
-                stop "dgetrf failed in one_step_BE_BBBD (singular or illegal argument)"
-            end if
-            ! Solve M * qnew = qn  (dgetrs uses LU factors in A and ipiv)
-            call dgetrs('N', 4, nrhs, A, lda, ipiv, qn, ldb, info)
-            if (info /= 0) then
-                stop "dgetrs failed in one_step_BE_BBBD"
-            end if
-            hw = qn(1)*h
-            hsg = qn(2)*h
-            hp = qn(3)*h
-            hpb = qn(4)*h
-        end subroutine one_step_BE_BBBD
-
-
-        subroutine one_step_SDIRK22_BBBD(h, hw, hsg, hp, hpb, csq_space, dt)
-            !Take one step using the SDIRK2(2) method
-            !Intended to solve q_t = A(q) with A(q) = A*q
-            !And q = (w,sg,p,pb), 
-            implicit none
-            double precision, intent(in) :: h, csq_space, dt
-            double precision, intent(inout) :: hw, hsg, hp, hpb
-            !Matrix handling
-            double precision, dimension(4,4) :: A
-            double precision, dimension(4) :: qn, qnp1
+            double precision, intent(in) :: h, bx, csq_space, dt
+            double precision, intent(inout) :: hu, hw, hsg, hp, hpb
+            double precision :: u, v, w, sg, p, pb
 
             if (h<dry_tolerance .or. csq_space < 1.e-6) then
                 !Do nothing
                 return
             end if
-            qn = (/hw/h,hsg/h,hp/h,hpb/h/)
-            A = 0.d0
-            A(1,4) = 1.d0/h
-            A(2,3) = 12.d0/h
-            A(2,4) = -6.d0/h
-            A(3,2) = -csq_space/h
-            A(4,1) = -6.d0*csq_space/h
-            A(4,2) = 3.d0*csq_space/h
-
-            call one_general_sdirk2_step(dt,A,qn,qnp1)
-            hw = qnp1(1)*h
-            hsg = qnp1(2)*h
-            hp = qnp1(3)*h
-            hpb = qnp1(4)*h
-        end subroutine one_step_SDIRK22_BBBD
-
-        subroutine one_general_sdirk2_step(dt, A, qn, qnp1)
-            implicit none
-            ! Single-call SDIRK2 step for dq/dt = A*q
-            ! All arrays are DOUBLE PRECISION (fortran default double)
-            !
-            ! Inputs:
-            !   dt      - DOUBLE PRECISION scalar timestep
-            !   A(n,n)  - DOUBLE PRECISION system matrix
-            !   qn(n)  - DOUBLE PRECISION current state
-            !
-            ! Output:
-            !   qnp1(n) - DOUBLE PRECISION next state
-            !
-            ! Method:
-            !   gamma = 1 - 1/sqrt(2)
-            !   M = I - gamma*dt*A
-            !   factorize M (LU)
-            !   solve M * q1 = qn
-            !   form rhs2 = qn + dt*(1-gamma)*A*q1
-            !   solve M * q2 = rhs2
-            !   qnp1 = q2
-            !
-            ! Requires LAPACK: dgetrf, dgetrs
-            !
-            double precision, intent(in)  :: dt
-            double precision, intent(in)  :: A(:,:)
-            double precision, intent(in)  :: qn(:)
-            double precision, intent(out) :: qnp1(:)
-
-            integer :: n, info, lda, ldb, nrhs
-            integer, allocatable :: ipiv(:)
-            double precision, allocatable :: M(:,:), rhs(:), q1(:), q2(:)
-            double precision :: gamma
-            integer :: i
-
-            ! For LAPACK external declarations 
-            external dgetrf, dgetrs
-
-            n = size(qn)
-            if (size(A,1) /= n .or. size(A,2) /= n .or. size(qnp1) /= n) then
-                stop "Dimension mismatch in sdirk2_step"
-            end if
-
-            gamma = 1.0d0 - 1.0d0/sqrt(2.0d0)
-
-            lda = n
-            ldb = n
-            nrhs = 1
-
-            allocate(M(n,n), rhs(n), q1(n), q2(n), ipiv(n))
-
-            ! Build M = I - gamma*dt*A
-            M = -gamma * dt * A
-            do i = 1, size(M,1)
-                M(i,i) = M(i,i) + 1.0d0
-            end do
-
-            ! LU factorization of M (overwrites M with LU factors)
-            call dgetrf(n, n, M, lda, ipiv, info)
-            if (info /= 0) then
-                stop "dgetrf failed in one_general_sdirk2_step (singular or illegal argument)"
-            end if
-
-            ! Stage 1: solve M * q1 = qn  (dgetrs uses LU factors in M and ipiv)
-            rhs = qn
-            call dgetrs('N', n, nrhs, M, lda, ipiv, rhs, ldb, info)
-            if (info /= 0) then
-                stop "dgetrs failed at stage 1 in one_general_sdirk2_step"
-            end if
-            q1 = rhs
-
-            ! Build RHS for stage 2: qn + dt*(1-gamma)*A*q1
-            rhs = qn + dt * (1.0d0 - gamma) * matmul(A, q1)
-
-            ! Stage 2: solve M * q2 = rhs  (reuse LU factors in M and ipiv)
-            call dgetrs('N', n, nrhs, M, lda, ipiv, rhs, ldb, info)
-            if (info /= 0) then
-                stop "dgetrs failed at stage 2 in one_general_sdirk2_step"
-            end if
-            q2 = rhs
-
-            qnp1 = q2
-
-            deallocate(M, rhs, q1, q2, ipiv)
-        end subroutine one_general_sdirk2_step
-
+            u = hu/h
+            v = 0.d0
+            w = hw/h
+            sg = hsg/h
+            p = hp/h
+            pb = hpb/h
+            call sdirk22_bbbd(h, u, v, w, sg, p, pb, bx, 0.d0, csq_space, dt)
+            hu = h*u
+            hw = h*w
+            hsg = h*sg
+            hp = h*p
+            hpb = h*pb
+        end subroutine one_step_SDIRK22_BBBD_1D
 
 end subroutine src1
 

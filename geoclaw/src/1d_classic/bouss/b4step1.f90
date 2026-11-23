@@ -26,6 +26,8 @@ subroutine b4step1(mbc,mx,meqn,q,xlower,dx,t,dt,maux,aux)
     use grid_module, only: monitor_total_zeta, iunit_total_zeta_mass
     use grid_module, only: total_zeta_mass_t0, NOTSET
     use grid_module, only: monitor_runup, iunit_runup, runup_tolerance
+    use bouss_module, only: boussEquations
+    use bouss_module, only: dr_index => boussDecayRate_index
 
     implicit none
     integer, intent(in) :: mbc,mx,meqn,maux
@@ -40,6 +42,16 @@ subroutine b4step1(mbc,mx,meqn,q,xlower,dx,t,dt,maux,aux)
     real(kind=8) :: total_zeta_mass, cell_zeta_mass, dzeta
     real(kind=8) :: x_first_wet,z_first_wet,x_last_wet,z_last_wet
     integer :: i_first_wet, i_last_wet
+
+    ! Hyperbolic relaxation systems (EDC = mbHSGN, BBBD = HSGN): the non-hydrostatic variables are
+    ! zero where the SWEs are solved (aux(dr_index) = 0, set in setaux), as in 2D (b4step2). The
+    ! Riemann solver at the SWE/Boussinesq interface is the dispersive one (with c^2 = 0 on the SWE
+    ! side), which also updates these variables in the SWE cell next to the interface.
+    if (boussEquations < 0) then
+        do i=1-mbc,mx+mbc
+            q(3:meqn,i) = aux(dr_index,i) * q(3:meqn,i)
+        enddo
+    endif
 
     ! accumulate total mass in excess of initial sea level
     ! zeta = eta = h+B offshore and zeta = h onshore.  Should be conserved.
