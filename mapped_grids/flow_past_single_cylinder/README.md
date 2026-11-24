@@ -7,7 +7,7 @@ To generate the data for mbHSGN, run the following commands:
 2. make data
 3. make .output
 
-For the SWE, take `alpha_dimensionless_relaxation=0`, turn off transverse propagation: `clawdata.transverse_waves = 'none'`, and reduce the CFL number:`clawdata.cfl_desired = 0.45` in `setrun.py`. To compensate for the decreased CFL number, also increase the initial refinement ratio to 4 (instead of 2) in `setrun.py`. Then, run the commans above, with `make .output OUTDIR=_output_SWE`.
+For the SWE, take `alpha_dimensionless_relaxation=0` in `setrun.py` and run the commands above with `make .output OUTDIR=_output_SWE`.
 
 To generate Figures 14 and 15 in the paper, run:
 1. make mapping

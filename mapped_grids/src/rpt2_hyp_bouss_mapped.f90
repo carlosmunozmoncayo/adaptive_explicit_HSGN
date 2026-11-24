@@ -2,10 +2,11 @@
 subroutine rpt2(ixy,imp,maxm,meqn,mwaves,maux,mbc,mx,ql,qr,aux1,aux2,aux3,asdq,bmasdq,bpasdq)
 ! =====================================================
 
-! # Riemann solver in the transverse direction for NLSH in 2D
+! # Transverse Riemann solver for the EDC hyperbolic system (mbHSGN) on a mapped grid
 ! # Split asdq into down-going flux bmasdq and up-going flux bpasdq.
 ! # imp=1  means  asdq=amdq,    imp=2 means asdq=apdq
-! # Not sure if this is well coded yet. We'll have to try.  
+! # Both parts use the state of the cell asdq goes into (i1) and the normal
+! # of the transverse face it crosses (bottom face: aux2, top face: aux3).
 !Parameters for Boussinesq equations
     !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     !For the moment, the only system that requires changes in the RS
@@ -67,6 +68,10 @@ subroutine rpt2(ixy,imp,maxm,meqn,mwaves,maux,mbc,mx,ql,qr,aux1,aux2,aux3,asdq,b
 
     do i=ix1,ixm1
         i1 = i + imp - 2
+        !Primitive variables of cell i1 (the cell asdq goes into)
+        h = ql(1,i1)
+        w = ql(4,i1) / h
+        p = ql(5,i1) / h
         !Get rotation angle from aux array
         !up-going:
         ct = aux3(ixtran,i1)
@@ -75,14 +80,11 @@ subroutine rpt2(ixy,imp,maxm,meqn,mwaves,maux,mbc,mx,ql,qr,aux1,aux2,aux3,asdq,b
         delta(:,1) = asdq(:,i)
         delta(2,1) = ct*asdq(2,i)+st*asdq(3,i)
         delta(3,1) = -st*asdq(2,i)+ct*asdq(3,i)
-        !Get primitive variables
-        h = ql(1,i1)
+        !Normal and tangential velocity components
         u = (ct*ql(2,i1) + st*ql(3,i1)) / h
         v = (-st*ql(2,i1) + ct*ql(3,i1)) / h
-        w = ql(4,i1) / h
-        p = ql(5,i1)
         !Get waves from Riemann solver (already rotated back inside)
-        call mapped_transverse_HypRel_EDC(ct,st,u,v,h,w,p,g,c_sq,delta,waves,s)
+        call mapped_transverse_HypRel_EDC(ct,st,h,u,v,w,p,g,c_sq,delta,waves,s)
         !Split fluctuations
         do mw=1,mwaves
             if (s(mw) > 1.e-16) then
@@ -97,7 +99,7 @@ subroutine rpt2(ixy,imp,maxm,meqn,mwaves,maux,mbc,mx,ql,qr,aux1,aux2,aux3,asdq,b
         delta(:,1) = asdq(:,i)
         delta(2,1) = ct*asdq(2,i)+st*asdq(3,i)
         delta(3,1) = -st*asdq(2,i)+ct*asdq(3,i)
-        !Get primitive variables
+        !Normal and tangential velocity components
         u = (ct*ql(2,i1) + st*ql(3,i1)) / h
         v = (-st*ql(2,i1) + ct*ql(3,i1)) / h
         !Get waves from Riemann solver (already rotated back inside)
@@ -116,10 +118,10 @@ subroutine rpt2(ixy,imp,maxm,meqn,mwaves,maux,mbc,mx,ql,qr,aux1,aux2,aux3,asdq,b
             implicit none
             !Input
             double precision, intent(in) :: ct,st !Rotation cos and sin
-            double precision, intent(in) :: u, v, h, w, p, c_sq, localasdq(5,1)
+            double precision, intent(in) :: h, u, v, w, p, c_sq, localasdq(5,1)
             double precision, intent(in) :: grav
-            !u should be normal velocity component
-            !v should be tangential velocity component
+            !u: normal velocity component, v: tangential velocity component
+            !w, p: primitive variables hw/h and hp/h
 
             !Output
             double precision, intent(out) ::  waves(5,5),s(5) 
