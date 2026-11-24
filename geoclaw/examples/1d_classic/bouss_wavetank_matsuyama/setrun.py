@@ -88,7 +88,7 @@ def setrun(claw_pkg='geoclaw'):
 
     # To use Boussinesq solver, add bouss_data parameters here
     # Also make sure to use the correct Makefile pointing to bouss version
-    # Use the local data.py (BoussData1D with bouss_EDC_c_sq / bouss_EDC_gamma); the stock
+    # Use the local data.py (BoussData1D with bouss_EDC_alpha / bouss_EDC_gamma); the stock
     # clawpack.geoclaw.data.BoussData1D does not define these attributes.
     local_geoclaw = os.environ["LOCALGEOCLAW"]
     sys.path.append(os.path.join(local_geoclaw,'src','python','geoclaw'))
@@ -98,8 +98,8 @@ def setrun(claw_pkg='geoclaw'):
     rundata.bouss_data.bouss_equations = 2    # 0=SWE, 1=MS, 2=SGN, -1=EDC    #flag_bouss_data.bouss_equations PLEASE DO NOT DELETE THIS COMMENT
     rundata.bouss_data.bouss_min_depth = 0.06  # depth to switch to SWE
     alpha = 5.0           #flag_EDC_alpha PLEASE DO NOT DELETE THIS COMMENT
-    h0 = 4; g = 9.81 #Computing relaxation parameter as suggested in Escalante et al. (2019)
-    rundata.bouss_data.bouss_EDC_c_sq = (alpha**2)*h0*g
+    # c^2 = alpha^2 * g * H is computed in setaux, with H the local depth at rest
+    rundata.bouss_data.bouss_EDC_alpha = alpha
 
 
     # ---------------
@@ -122,7 +122,7 @@ def setrun(claw_pkg='geoclaw'):
         clawdata.num_waves = 2
 
     # Number of auxiliary variables in the aux array (initialized in setaux)
-    clawdata.num_aux = 2
+    clawdata.num_aux = 4    # topography, capacity, c^2, SWE/Boussinesq indicator (see setaux)
 
     # Index of aux array corresponding to capacity function, if there is one:
     clawdata.capa_index = 2

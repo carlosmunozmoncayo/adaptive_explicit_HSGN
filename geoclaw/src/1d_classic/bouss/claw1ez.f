@@ -215,6 +215,7 @@ c
          print *, '*** Error allocating aux array; exiting claw1ez'
          go to 900
       end if
+      aux = 0.d0
 
 c        
 c     # set aux array:
@@ -229,6 +230,9 @@ c
          print *, '*** Error allocating q array; exiting claw1ez'
          go to 900
       end if
+c     # The default qinit only sets h and hu: start from zero, so that the
+c     # other components (hw, hp, ... of the Boussinesq systems) are defined.
+      q = 0.d0
 
       if (.not. topo_finalized) then
           if (t_dtopo(1) < t0) then

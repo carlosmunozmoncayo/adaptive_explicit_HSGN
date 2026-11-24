@@ -24,7 +24,7 @@ c     # to the virtual cells outside the region, with
 c     #      i = 1-ibc  and   i = mx+ibc   for ibc=1,...,mbc
 c
       use geoclaw_module, only: grav
-      use bouss_module, only: c_sq => boussEDCcsq !Reference hyperbolic relaxation parameter
+c     # (the local relaxation parameter c^2 is aux(3,:), set in setaux, for bouss_equations < 0)
       use bouss_module, only: gamma => boussEDCgamma !Approximate SGN (3/2) or Sainte-Marie equations (2)
 
       implicit double precision (a-h,o-z)

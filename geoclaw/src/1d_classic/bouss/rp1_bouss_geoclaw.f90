@@ -37,10 +37,12 @@ subroutine rp1(maxmx,meqn,mwaves,maux,mbc,mx,ql,qr,auxl,auxr,fwave,s,amdq,apdq)
     !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     !For the moment, the only system that requires changes in the RS
     !is EDC HypRel (boussEquations = -1)
-    use bouss_module, only: boussEquations, useBouss, boussMinDepth
+    use bouss_module, only: boussEquations
     use bouss_module, only: riemann_normal_HypRel_EDC, riemann_normal_HypRel_BBBD
-    use bouss_module, only: c_sq => boussEDCcsq !Reference hyperbolic relaxation parameter
     use bouss_module, only: gamma => boussEDCgamma !Approximate SGN (3/2) or Sainte-Marie equations (2)
+    !Local relaxation parameter c^2 and SWE/Boussinesq indicator (set in setaux, boussEquations < 0)
+    use bouss_module, only: csq_index => bouss_csq_index, dr_index => boussDecayRate_index
+    use bouss_module, only: small_tol_bouss
     !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
     implicit none
@@ -77,6 +79,9 @@ subroutine rp1(maxmx,meqn,mwaves,maux,mbc,mx,ql,qr,auxl,auxr,fwave,s,amdq,apdq)
     !Local BBBD HypRel Boussinesq equations
     double precision :: sgl, sgr, pbl, pbr
     double precision :: fwBBBD(7,7), swBBBD(7) !To use with 2D normal RS
+    !Local relaxation parameter, SWE/Boussinesq switch
+    double precision :: csq_l, csq_r, csq_bar
+    logical :: hyp_rel
     !!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     skip_fourth_idx = (/ 1, 2, 3, 5, 6, 7 /)
     skip_fifth_idx = (/ 1, 2, 3, 4, 6, 7 /)
@@ -114,9 +119,22 @@ subroutine rp1(maxmx,meqn,mwaves,maux,mbc,mx,ql,qr,auxl,auxr,fwave,s,amdq,apdq)
          bL = auxr(1,i-1)
          bR = auxl(1,i)
 
+         !Hyperbolic relaxation system where both cells are wet and at least one of them uses it
+         !(aux(dr_index) = 1, set in setaux); SWEs otherwise. At the interface between a
+         !Boussinesq cell and an SWE cell the dispersive (transmission-type) solver is used with the
+         !local c^2 of each side (c^2 = 0 on the SWE side): the waves entering the Boussinesq cell
+         !carry its c^2. The non-hydrostatic variables of the SWE cell are zero (b4step1).
+         hyp_rel = .false.
+         if (boussEquations < 0) then
+            hyp_rel = min(hL,hR) > drytol .and. &
+                      max(auxr(dr_index,i-1), auxl(dr_index,i)) > small_tol_bouss
+            csq_l = auxr(csq_index,i-1)
+            csq_r = auxl(csq_index,i)
+            csq_bar = 0.5d0*(csq_l + csq_r)
+         endif
+
          !Solve Riemann problem for BTEqs or SWEs (compute fwaves and speeds)
-         if (useBouss(i).and. useBouss(i-1) .and. min(hL,hR)>drytol &
-            .and. boussEquations==-1) then
+         if (hyp_rel .and. boussEquations==-1) then
                !EDC HypRef Boussinesq-type equations
                !If we get here, the solver should return 4 f-waves
                !of 4 components each, and 4 wave speeds.
@@ -127,9 +145,9 @@ subroutine rp1(maxmx,meqn,mwaves,maux,mbc,mx,ql,qr,auxl,auxr,fwave,s,amdq,apdq)
                wR = ql(3,i)/hR
                pL = qr(4,i-1)/hL
                pR = ql(4,i)/hR
-               call riemann_normal_HypRel_EDC(2,3,g,gamma,c_sq, &
-                                    hL, uL, 0.d0, wL, pL, bL, c_sq, &
-                                    hR, uR, 0.d0, wR, pR, bR, c_sq, &
+               call riemann_normal_HypRel_EDC(2,3,g,gamma,csq_bar, &
+                                    hL, uL, 0.d0, wL, pL, bL, csq_l, &
+                                    hR, uR, 0.d0, wR, pR, bR, csq_r, &
                                     fwEDC, swEDC)
                
                
@@ -141,8 +159,7 @@ subroutine rp1(maxmx,meqn,mwaves,maux,mbc,mx,ql,qr,auxl,auxr,fwave,s,amdq,apdq)
                   fwave(3:4,mw,i) = fwEDC(4:5,skip_fourth_idx(mw))
                end do
          
-         else if (useBouss(i).and. useBouss(i-1) .and. min(hL,hR)>drytol &
-            .and. boussEquations==-2) then
+         else if (hyp_rel .and. boussEquations==-2) then
                !BBBD HypRef Boussinesq-type equations
                !If we get here, the solver should return 6 f-waves
                !of 6 components each, and 6 wave speeds.
@@ -157,9 +174,9 @@ subroutine rp1(maxmx,meqn,mwaves,maux,mbc,mx,ql,qr,auxl,auxr,fwave,s,amdq,apdq)
                pR = ql(5,i)/hR
                pbl = qr(6,i-1)/hL
                pbr = ql(6,i)/hR
-               call riemann_normal_HypRel_BBBD(mu=2, nv=3, grav=g, c_sq=c_sq, &
-                  hl=hl, ul=ul, vl=0.d0, wl=wl, sgl=sgl, pl=pl, pbl=pbl, bl=bl, csq_l=c_sq,&
-                  hr=hr, ur=ur, vr=0.d0, wr=wr, sgr=sgr, pr=pr, pbr=pbr, br=br, csq_r=c_sq, &
+               call riemann_normal_HypRel_BBBD(mu=2, nv=3, grav=g, c_sq=csq_bar, &
+                  hl=hl, ul=ul, vl=0.d0, wl=wl, sgl=sgl, pl=pl, pbl=pbl, bl=bl, csq_l=csq_l,&
+                  hr=hr, ur=ur, vr=0.d0, wr=wr, sgr=sgr, pr=pr, pbr=pbr, br=br, csq_r=csq_r, &
                   fw=fwBBBD, sw=swBBBD)
                
                !swBBBD(3) and fwBBBD(:,3) have no use in 1D

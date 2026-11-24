@@ -14,6 +14,7 @@ import numpy as np
 parent_dir = os.path.abspath(os.path.join(os.getcwd(), os.pardir))
 sys.path.append(os.path.join(parent_dir, 'src'))
 import rs_bouss_hyprel_fwave_splitting_1D as rs
+import rs_bouss_hyprel_sharpclaw_1D as rs_sharpclaw  # SharpClaw entry point (non-conservative products use d(h))
 from dispersive_tfluct import tfluct1
 import bouss_hyprel_sharpclaw1
 
@@ -71,7 +72,7 @@ def setup(outdir='./_output',solver_type='sharpclaw',riemann_solver='dispersive'
         solver.fwave=True
         solver.step_source=classic_source_step
     elif solver_type == 'sharpclaw':
-        solver = pyclaw.SharpClawSolver1D(rs)
+        solver = pyclaw.SharpClawSolver1D(rs_sharpclaw)
         solver.fwave=True
         solver.tfluct = tfluct1
         solver.weno_order=5

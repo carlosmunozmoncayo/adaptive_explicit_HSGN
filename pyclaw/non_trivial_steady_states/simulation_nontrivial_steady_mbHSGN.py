@@ -28,6 +28,7 @@ from scipy.integrate import solve_ivp
 parent_dir = os.path.abspath(os.path.join(os.getcwd(), os.pardir))
 sys.path.append(os.path.join(parent_dir, 'src'))
 import rs_bouss_hyprel_fwave_splitting_1D as rs
+import rs_bouss_hyprel_sharpclaw_1D as rs_sharpclaw  # SharpClaw entry point (non-conservative products use d(h))
 from dispersive_tfluct import tfluct1
 
 
@@ -79,7 +80,7 @@ def setup(outdir='./_output',solver_type='sharpclaw',
         solver.step_source=classic_source_step
         solver.source_split = 2
     elif solver_type == 'sharpclaw':
-        solver = pyclaw.SharpClawSolver1D(rs)
+        solver = pyclaw.SharpClawSolver1D(rs_sharpclaw)
         solver.fwave=True
         solver.weno_order=5
         solver.lim_type=2

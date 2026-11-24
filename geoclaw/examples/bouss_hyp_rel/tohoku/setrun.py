@@ -488,9 +488,8 @@ def setgeo(rundata):
     # list of objects of class clawpack.geoclaw.fgout_tools.FGoutGrid:
     #rundata.fgout_data.fgout_grids = []
 
-    from clawpack.geoclaw.data import BoussData, BoussFlagRegionData
     # Use the local data.py (BoussData with hyperbolic-relaxation attributes, BoussFlagRegionData);
-    # the stock clawpack.geoclaw.data.BoussData lacks bouss_trans_low, bouss_EDC_c_sq, ... and
+    # the stock clawpack.geoclaw.data.BoussData lacks bouss_trans_low, bouss_EDC_alpha, ... and
     # BoussFlagRegionData does not exist there.
     import sys 
     local_geoclaw = os.environ["LOCALGEOCLAW"]
@@ -507,7 +506,7 @@ def setgeo(rundata):
     rundata.bouss_data.bouss_equations = Bouss_Hyp_rel    # -1=ECD_HypRel, 0=SWE, 1=MS, 2=SGN
     rundata.bouss_data.bouss_trans_low = 20.0#3.e3  # depth to switch to SWE
     rundata.bouss_data.bouss_trans_up = 20.0
-    rundata.bouss_data.bouss_EDC_c_sq = 3 # For this test, we pass the nondimensional relaxation parameter (alpha) #4.e3*geo_data.gravity*3. # EDC wave speed
+    rundata.bouss_data.bouss_EDC_alpha = 3. # c^2 = alpha^2 * g * H (H = local depth at rest), computed in setaux
     rundata.bouss_data.bouss_EDC_gamma = 3./2.  # EDC gamma (2 for Saint-Marie's sytem)
     rundata.bouss_data.bouss_csq_index = 3  # index of c^2 in aux array (Python indexing)
     rundata.bouss_data.bouss_decay_rate_index = 4  # index of decay rate in aux array (Python indexing)
@@ -516,26 +515,25 @@ def setgeo(rundata):
 
     
 
-    from clawpack.amrclaw.data import FlagRegion
-
-    #Set Bouss regions
+    # No Bouss regions: the dispersive terms are used everywhere except near the
+    # wet-dry front (depth-based transition to the SWEs, bouss_trans_low/up above).
     rundata.add_data(BoussFlagRegionData(),'bouss_regions_data')
-    bouss_flag_regions = rundata.bouss_regions_data.flagregions
-    thisdir = os.path.dirname(__file__)
-    clustered_rrs_path = os.path.join(thisdir,"clustered_rrs")
-    for file in os.listdir(clustered_rrs_path):
-        if file.endswith(".data"):# and file.startswith("rr"):
-            rr =  FlagRegion(num_dim=2)
-            #Strip the extension
-            rr.name = os.path.splitext(file)[0]
-            rr.minlevel = 1
-            rr.maxlevel = 10
-            rr.t1 = 0.0
-            rr.t2 = 1.e9
-            rr.spatial_region_type = 2
-            rr.spatial_region_file = \
-                os.path.abspath(os.path.join(clustered_rrs_path,file))
-            bouss_flag_regions.append(rr)
+    # bouss_flag_regions = rundata.bouss_regions_data.flagregions
+    # thisdir = os.path.dirname(__file__)
+    # clustered_rrs_path = os.path.join(thisdir,"clustered_rrs")
+    # for file in os.listdir(clustered_rrs_path):
+    #     if file.endswith(".data"):# and file.startswith("rr"):
+    #         rr =  FlagRegion(num_dim=2)
+    #         #Strip the extension
+    #         rr.name = os.path.splitext(file)[0]
+    #         rr.minlevel = 1
+    #         rr.maxlevel = 10
+    #         rr.t1 = 0.0
+    #         rr.t2 = 1.e9
+    #         rr.spatial_region_type = 2
+    #         rr.spatial_region_file = \
+    #             os.path.abspath(os.path.join(clustered_rrs_path,file))
+    #         bouss_flag_regions.append(rr)
 
     # Omit source terms for sphere, as in v5.9.2 and earlier.
     # The proper spherical source terms for Boussinesq equations are still

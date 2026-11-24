@@ -21,7 +21,6 @@ subroutine src1d(meqn,mbc,mx1d,q1d,maux,aux1d,t,dt)
     use bouss_module, only: boussEquations
     use bouss_module, only: S_EDC => Source_HypRel_EDC !Source term function
     use bouss_module, only: S_BBBD => Source_HypRel_BBBD !Source term function
-    use bouss_module, only: c_sq => boussEDCcsq !Reference hyperbolic relaxation parameter
     use bouss_module, only: gammaEDC => boussEDCgamma !Approximate SGN (3/2) or Sainte-Marie equations (2)
     use bouss_module, only: csq_index => bouss_csq_index !Index of the hyperbolic relaxation parameter
     use bouss_module, only: dr_index => boussDecayRate_index !Index of the decay rate

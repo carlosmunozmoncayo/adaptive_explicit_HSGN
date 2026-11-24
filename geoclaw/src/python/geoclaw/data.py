@@ -850,7 +850,9 @@ class BoussData(clawpack.clawutil.data.ClawData):
         # Data for hyperbolic relaxation
         self.add_attribute('bouss_trans_low', 100.)
         self.add_attribute('bouss_trans_up', 100.)
-        self.add_attribute('bouss_EDC_c_sq',100.) #Reference hyperbolic relaxation parameter
+        # Hyperbolic relaxation parameter alpha: setaux sets c^2 = alpha^2 * g * H in each cell,
+        # with H the local depth at rest
+        self.add_attribute('bouss_EDC_alpha',3.)
         self.add_attribute('bouss_EDC_gamma',2.)  #Use EDC to approximate SGN (3/2) or Sainte-Marie equations (2)
         self.add_attribute('bouss_csq_index',1) #Python index
         self.add_attribute('bouss_decay_rate_index',2) #Python index
@@ -877,7 +879,7 @@ class BoussData(clawpack.clawutil.data.ClawData):
             ######
             # Data for hyperbolic relaxation
             self.data_write('bouss_tfinal', description='time to turn off BTEs')
-            self.data_write('bouss_EDC_c_sq', description='Reference hyperbolic relaxation parameter')
+            self.data_write('bouss_EDC_alpha', description='Hyperbolic relaxation parameter alpha (c^2 = alpha^2 g H)')
             self.data_write('bouss_EDC_gamma', description='Use EDC to approximate SGN (3/2) or Sainte-Marie equations (2)')
             self.data_write('bouss_csq_index', value=self.bouss_csq_index + 1,
                             description=("(Index into aux array ",
@@ -981,7 +983,9 @@ class BoussData1D(clawpack.clawutil.data.ClawData):
 
         self.add_attribute('bouss_equations',2)
         self.add_attribute('bouss_min_depth',20.)
-        self.add_attribute('bouss_EDC_c_sq',100.) #Reference hyperbolic relaxation parameter
+        # Hyperbolic relaxation parameter alpha: setaux sets c^2 = alpha^2 * g * H in each cell,
+        # with H the local depth at rest (needs num_aux >= 4 for bouss_equations < 0)
+        self.add_attribute('bouss_EDC_alpha',3.)
         self.add_attribute('bouss_EDC_gamma',2.)  #Use EDC to approximate SGN (3/2) or Sainte-Marie equations (2)
 
 
@@ -991,7 +995,7 @@ class BoussData1D(clawpack.clawutil.data.ClawData):
 
         self.data_write('bouss_equations')
         self.data_write('bouss_min_depth')
-        self.data_write('bouss_EDC_c_sq')
+        self.data_write('bouss_EDC_alpha')
         self.data_write('bouss_EDC_gamma')
 
         self.close_data_file()

@@ -8,10 +8,8 @@ subroutine rpt2(ixy,imp,maxm,meqn,mwaves,maux,mbc,mx, &
 !Parameters for Boussinesq equations
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
       use bouss_module, only: boussEquations
-      use bouss_module, only: riemann_transverse_HypRel_EDC
-      use bouss_module, only: riemann_transverse_HypRel_BBBD
+      use bouss_module, only: riemann_transverse_HypRel_EDC_BBBD
       use bouss_module, only: riemann_transverse_HypRel_DR
-      use bouss_module, only: c_sq => boussEDCcsq !Reference hyper. relax. parameter (also used for BBBD)
       use bouss_module, only: gamma => boussEDCgamma !Approximate SGN (3/2) or Sainte-Marie equations (2)
       use bouss_module, only: csq_index => bouss_csq_index
       use bouss_module, only: dr_index => boussDecayRate_index
@@ -54,6 +52,8 @@ subroutine rpt2(ixy,imp,maxm,meqn,mwaves,maux,mbc,mx, &
       double precision :: h, u,  v, w, sg, p, pb, cE
       double precision :: hu, hv, hw, hsg, hp, hpb, b
       double precision :: hsqrt, local_csq, local_dr
+      double precision :: csq_dn, csq_md, csq_up, dr_dn, dr_md, dr_up !EDC/BBBD: column of the receiving cell
+      double precision :: bm_loc(meqn), bp_loc(meqn)
 
       double precision :: u_l, u_r, h_l, h_r, v_l, v_r, cE_l, cE_r
       double precision :: w_l, w_r, p_l, p_r, b_l, b_r, csq_l, csq_r 
@@ -129,8 +129,18 @@ subroutine rpt2(ixy,imp,maxm,meqn,mwaves,maux,mbc,mx, &
             eta = qr(1,i-1)  + aux2(1,i-1)
             topo1 = aux1(1,i-1)
             topo3 = aux3(1,i-1)
-            local_csq = min(aux1(csq_index,i-1),aux2(csq_index,i-1),aux3(csq_index,i-1)) !To solve EDC system
+            local_csq = min(aux1(csq_index,i-1),aux2(csq_index,i-1),aux3(csq_index,i-1)) !For the DR transverse solver
             local_dr = min(aux1(dr_index,i-1),aux2(dr_index,i-1),aux3(dr_index,i-1))
+            if (boussEquations == -1 .or. boussEquations == -2) then
+               !SWE transverse splitting only if the whole column is SWE
+               local_dr = max(aux1(dr_index,i-1),aux2(dr_index,i-1),aux3(dr_index,i-1))
+               csq_dn = aux1(csq_index,i-1)
+               csq_md = aux2(csq_index,i-1)
+               csq_up = aux3(csq_index,i-1)
+               dr_dn = aux1(dr_index,i-1)
+               dr_md = aux2(dr_index,i-1)
+               dr_up = aux3(dr_index,i-1)
+            endif
             localq = qr(:,i-1)
 ! c            s1 = vl-sqrt(g*hl)
 ! c            s3 = vl+sqrt(g*hl)
@@ -139,8 +149,18 @@ subroutine rpt2(ixy,imp,maxm,meqn,mwaves,maux,mbc,mx, &
             eta = ql(1,i) + aux2(1,i)
             topo1 = aux1(1,i)
             topo3 = aux3(1,i)
-            local_csq = min(aux1(csq_index,i),aux2(csq_index,i),aux3(csq_index,i)) !To solve EDC system
+            local_csq = min(aux1(csq_index,i),aux2(csq_index,i),aux3(csq_index,i)) !For the DR transverse solver
             local_dr = min(aux1(dr_index,i),aux2(dr_index,i),aux3(dr_index,i))
+            if (boussEquations == -1 .or. boussEquations == -2) then
+               !SWE transverse splitting only if the whole column is SWE
+               local_dr = max(aux1(dr_index,i),aux2(dr_index,i),aux3(dr_index,i))
+               csq_dn = aux1(csq_index,i)
+               csq_md = aux2(csq_index,i)
+               csq_up = aux3(csq_index,i)
+               dr_dn = aux1(dr_index,i)
+               dr_md = aux2(dr_index,i)
+               dr_up = aux3(dr_index,i)
+            endif
             localq = ql(:,i)
 ! c            s1 = vr-sqrt(g*hr)
 ! c            s3 = vr+sqrt(g*hr)
@@ -277,50 +297,13 @@ subroutine rpt2(ixy,imp,maxm,meqn,mwaves,maux,mbc,mx, &
             endif
          enddo
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-   else if (boussEquations == -1) then
-   !EDC Hyperbolic Relaxation of BTEs
-      h = localq(1)
-      u = localq(2)/h
-      v = localq(3)/h
-      w = localq(4)/h
-      p = localq(5)/h
-      call riemann_transverse_HypRel_EDC(ixy,u,v,h,w,p,g,local_csq,asdq(:,i), &
-                                        waves,s)
-                                        
-      ! Computing left and right going fluctuations
-      do k = 1, mwaves
-            if (s(k)<-1.e-16) then
-                bmasdq(:,i) = bmasdq(:,i)+dxdcm*s(k)*waves(:,k)
-            else if (s(k)>1.e-16) then
-                bpasdq(:,i) = bpasdq(:,i)+dxdcp*s(k)*waves(:,k)
-            else
-                bmasdq(:,i)=bmasdq(:,i)+0.5*dxdcm*s(k)*waves(:,k)
-                bpasdq(:,i)=bpasdq(:,i)+0.5*dxdcp*s(k)*waves(:,k)
-            END if
-      END do
-   else if (boussEquations == -2) then
-   !BBBD Hyperbolic Relaxation of BTEs
-         h = localq(1)
-         u = localq(2)/h
-         v = localq(3)/h
-         w = localq(4)/h
-         sg = localq(5)/h
-         p = localq(6)/h
-         pb = localq(7)/h
-         call riemann_transverse_HypRel_BBBD(ixy,u,v,h,w,sg,p,pb, &
-         g,local_csq,asdq(:,i),waves,s)
-                                           
-         ! Computing left and right going fluctuations
-         do k = 1, mwaves
-               if (s(k)<-1.e-16) then
-                   bmasdq(:,i) = bmasdq(:,i)+dxdcm*s(k)*waves(:,k)
-               else if (s(k)>1.e-16) then
-                   bpasdq(:,i) = bpasdq(:,i)+dxdcp*s(k)*waves(:,k)
-               else
-                   bmasdq(:,i)=bmasdq(:,i)+0.5*dxdcm*s(k)*waves(:,k)
-                   bpasdq(:,i)=bpasdq(:,i)+0.5*dxdcp*s(k)*waves(:,k)
-               END if
-         END do
+   else if (boussEquations == -1 .or. boussEquations == -2) then
+   !EDC and BBBD Hyperbolic Relaxation of BTEs: transmission problems at the bottom and top faces
+   !of the receiving cell (see riemann_transverse_HypRel_EDC_BBBD in bouss_module)
+      call riemann_transverse_HypRel_EDC_BBBD(ixy,meqn,localq,g,csq_dn,csq_md,csq_up, &
+                                              dr_dn,dr_md,dr_up,asdq(:,i),bm_loc,bp_loc)
+      bmasdq(:,i) = bmasdq(:,i) + dxdcm*bm_loc
+      bpasdq(:,i) = bpasdq(:,i) + dxdcp*bp_loc
    else if (boussEquations == -3) then
    !DR Hyperbolic Relaxation of BTEs
          h = localq(1)
