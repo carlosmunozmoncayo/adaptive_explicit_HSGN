@@ -993,10 +993,6 @@ end function transition_function
 !     u_t = -bx pb/h,  v_t = -by pb/h,  w_t = pb/h,  sg_t = (12 p - 6 pb)/h,
 !     p_t = (-c^2 sg - c^2 (u bx + v by))/h,
 !     pb_t = (6 c^2 (u bx + v by) - 6 c^2 w + 3 c^2 sg)/h
-!   neutral for any grad b (the velocity component along grad b plays the role of the 1D u,
-!   the orthogonal one is unchanged)
-! c^2 = c^2 of the cell; no grad(c^2) term: the p-equation is in non-conservative form (c^2 outside
-! the divergence), and c^2 div(hu) is in the Riemann solver (transmission type)
 !======================================================================
 subroutine sdirk22_edc(h, u, v, w, p, bx, by, csq, gam, dt)
     implicit none
