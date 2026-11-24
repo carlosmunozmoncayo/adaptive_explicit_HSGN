@@ -50,7 +50,6 @@
       use bouss_module, only: riemann_normal_HypRel_EDC
       use bouss_module, only: riemann_normal_HypRel_BBBD
       use bouss_module, only: riemann_normal_HypRel_DR
-      use bouss_module, only: c_sq => boussEDCcsq 
       use bouss_module, only: csq_index => bouss_csq_index
       use bouss_module, only: dr_index => boussDecayRate_index
       !Reference hyperbolic relaxation parameter (Just used for EDC)
@@ -94,6 +93,8 @@
       double precision :: sgL, sgR, pbL, pbR !For BBBD HypRel
       double precision :: fwHypRel(meqn,mwaves), swHypRel(mwaves)
       double precision :: csq_l, csq_r, drL, drR
+      double precision :: csq_bar !Local copy passed as c_sq (the DR solver overwrites its c_sq argument)
+      double precision :: dr_face !Switch of the face: SWE solver if dr_face = 0
       !!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
       ! In case there is no pressure forcing
@@ -151,6 +152,7 @@
          csq_r = auxl(csq_index,i)
          drL = auxr(dr_index,i-1)
          drR = auxl(dr_index,i)
+         csq_bar = 0.5d0*(csq_l+csq_r)
          !No pressure forcing, I'll recycle these variables for 
          !non-hydrostatic pressure 
          !if (pressure_forcing) then
@@ -162,7 +164,16 @@
          hvR=ql(nv,i)
         
 
-         if (min(hl,hr)<drytol .or. min(drL,drR)<=small_tol_bouss &
+         !EDC/BBBD: the SWE solver only between two SWE cells (aux(dr_index) = 0 on both sides). At a
+         !dispersive/SWE face the transmission solver is used with the SWE side's c^2 = 0 and w = p = 0
+         !(b4step2 zeroes them in SWE cells): the waves entering the dispersive cell carry its c^2, and
+         !the momentum flux includes the jump of hp. DR: SWE solver as soon as one side is SWE.
+         if (boussEquations == -1 .or. boussEquations == -2) then
+            dr_face = max(drL,drR)
+         else
+            dr_face = min(drL,drR)
+         endif
+         if (min(hl,hr)<drytol .or. dr_face<=small_tol_bouss &
             .or. boussEquations==0) then
          !Solve SWEs
             !check for wet/dry boundary
@@ -280,7 +291,7 @@
             pL = qr(5,i-1)/hL
             pR = ql(5,i)/hR
    
-            call riemann_normal_HypRel_EDC(mu,nv,g,gamma,c_sq,&
+            call riemann_normal_HypRel_EDC(mu,nv,g,gamma,csq_bar,&
                                  hL, uL, vL, wL, pL, bL, csq_l, &
                                  hR, uR, vR, wR, pR, bR, csq_r, &
                                  fwHypRel, swHypRel)
@@ -306,7 +317,7 @@
             pbL = qr(7,i-1)/hL
             pbR = ql(7,i)/hR
             
-            call riemann_normal_HypRel_BBBD(mu, nv, g, c_sq, &
+            call riemann_normal_HypRel_BBBD(mu, nv, g, csq_bar, &
                      hl, ul, vl, wl, sgl, pl, pbl, bl, csq_l,&
                      hr, ur, vr, wr, sgr, pr, pbr, br, csq_r, &
                      fwHypRel, swHypRel)
@@ -330,7 +341,7 @@
             sgL = qr(6,i-1)/hL
             sgR = ql(6,i)/hR
             
-            call riemann_normal_HypRel_DR(mu, nv, g, 1.159d0, c_sq, &
+            call riemann_normal_HypRel_DR(mu, nv, g, 1.159d0, csq_bar, &
                      hL, uL, vL, wL, pL, sgL, bL, csq_l, &
                      hR, uR, vR, wR, pR, sgR, bR, csq_r, &
                      fwHypRel, swHypRel)

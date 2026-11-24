@@ -30,7 +30,7 @@ subroutine setaux(mbc,mx,my,xlow,ylow,dx,dy,maux,aux)
     use amr_module, only: xperdom, yperdom
 
     use geoclaw_module, only: coordinate_system, earth_radius, deg2rad
-    use geoclaw_module, only: sea_level, ambient_pressure
+    use geoclaw_module, only: sea_level, ambient_pressure, grav
 
     use storm_module, only: wind_forcing, pressure_forcing
     use storm_module, only: wind_index, pressure_index, set_storm_fields
@@ -42,7 +42,7 @@ subroutine setaux(mbc,mx,my,xlow,ylow,dx,dy,maux,aux)
 
     use adjoint_module, only : adjoint_flagging,innerprod_index
 
-    use bouss_module, only : c_sq => boussEDCcsq !Reference hyperbolic relaxation parameter
+    use bouss_module, only : alpha => boussEDCalpha !Hyperbolic relaxation parameter: c^2 = alpha^2 g H
     use bouss_module, only : boussEquations
     use bouss_module, only: dr_index => boussDecayRate_index
     use bouss_module, only: csq_index => bouss_csq_index
@@ -77,6 +77,7 @@ subroutine setaux(mbc,mx,my,xlow,ylow,dx,dy,maux,aux)
     ! To store temporal data
     real(kind=8) :: h_at_rest, dist_to_regions
     integer :: neighborhood_idx(8,2),iidx,jidx, kk
+    real(kind=8) :: local_relaxation_parameter
     integer :: mbc_local
 
     !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -276,27 +277,33 @@ subroutine setaux(mbc,mx,my,xlow,ylow,dx,dy,maux,aux)
 
     !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     !Set Hyperbolic relaxation parameter for EDC and BBBD systems
+    !The relaxation parameter depends on the local depth at rest H:
+    !    c^2 = alpha^2 * g * H * f,
+    !where H = sea_level - b, minimum over the cell and its 8 neighbours (clipped at 0),
+    !alpha = boussEDCalpha (bouss_EDC_alpha in setrun.py) and f in [0,1] is the transition
+    !function to the SWEs (stored in aux(dr_index)).
+    !idxs for buffer zone
+    neighborhood_idx(:,1) = [-1,-1,-1,0 ,0, 1,1,1]
+    neighborhood_idx(:,2) = [-1, 0, 1,-1,1,-1,0,1]
     if (boussEquations<0) then
         !Case statement
         select case(boussTransitionType)
         case(0) !Depth based transition
-            !idxs for buffer zone
-            neighborhood_idx(:,1) = [-1,-1,-1,0 ,0, 1,1,1]
-            neighborhood_idx(:,2) = [-1, 0, 1,-1,1,-1,0,1]
             ! do jj=1-mbc_local,my+mbc_local
             !     do ii=1-mbc,mx+mbc_local
             do jj=1-mbc,my+mbc
                 do ii=1-mbc,mx+mbc
                     h_at_rest = sea_level - aux_ext(1,ii,jj)
                     ! Go around neighborhood of this cell
-                        do kk=1,8
-                            iidx = ii + neighborhood_idx(kk,1)
-                            jidx = jj + neighborhood_idx(kk,2)
-                            h_at_rest = min(h_at_rest,sea_level - aux_ext(1,iidx,jidx))
-                        end do
-                        aux_ext(dr_index,ii,jj) = transition_function(h_at_rest,transition_low,&
-                                    transition_up,transition_type_fun)
-                        aux_ext(csq_index,ii,jj) = c_sq * aux_ext(dr_index,ii,jj)
+                    do kk=1,8
+                        iidx = ii + neighborhood_idx(kk,1)
+                        jidx = jj + neighborhood_idx(kk,2)
+                        h_at_rest = min(h_at_rest,sea_level - aux_ext(1,iidx,jidx))
+                    end do
+                    aux_ext(dr_index,ii,jj) = transition_function(h_at_rest,transition_low,&
+                                transition_up,transition_type_fun)
+                    local_relaxation_parameter = (alpha**2)*grav*max(h_at_rest,0.d0)
+                    aux_ext(csq_index,ii,jj) = local_relaxation_parameter * aux_ext(dr_index,ii,jj)
                 enddo
             enddo
         case(1) !Distance based transition
@@ -319,7 +326,18 @@ subroutine setaux(mbc,mx,my,xlow,ylow,dx,dy,maux,aux)
                     dist_to_regions = distance_to_bouss_regions(x,y,exact_distance)
                     aux_ext(dr_index,ii,jj) = transition_function(dist_to_regions,transition_low,&
                                       transition_up,transition_type_fun)
-                    aux_ext(csq_index,ii,jj) = c_sq * aux_ext(dr_index,ii,jj)
+                    ! Depth at rest (as in the depth-based case; neighbours outside the
+                    ! extended array are skipped)
+                    h_at_rest = sea_level - aux_ext(1,ii,jj)
+                    do kk=1,8
+                        iidx = ii + neighborhood_idx(kk,1)
+                        jidx = jj + neighborhood_idx(kk,2)
+                        if (iidx < -mbc .or. iidx > mx+mbc+1 .or. &
+                            jidx < -mbc .or. jidx > my+mbc+1) cycle
+                        h_at_rest = min(h_at_rest,sea_level - aux_ext(1,iidx,jidx))
+                    end do
+                    local_relaxation_parameter = (alpha**2)*grav*max(h_at_rest,0.d0)
+                    aux_ext(csq_index,ii,jj) = local_relaxation_parameter * aux_ext(dr_index,ii,jj)
                 end do
             end do
         case default

@@ -114,7 +114,7 @@ COMMON_SOURCES += \
   $(AMRLIB)/preintcopy.f \
   $(AMRLIB)/icall.f \
   $(AMRLIB)/preicall.f \
-  $(AMRLIB)/inlinelimiter.f \
+  $(LOCALBOUSSLIB2D)/limiter_strength.f \
   $(AMRLIB)/cstore.f \
   $(AMRLIB)/saveqc.f \
   $(AMRLIB)/opendatafile.f \
