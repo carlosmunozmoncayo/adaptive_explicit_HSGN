@@ -14,3 +14,12 @@ Notes (reproducibility check, Nov 2026):
 - Download the topography and the source models first: `python fetch_topo.py` and `python fetch_dtopo.py`.
 - For the SGN reference runs, GeoClaw's 2D Boussinesq solver must use the SGN parameter alpha=1 (paper, footnote 1):
   in `$CLAW/geoclaw/src/2d/bouss/bouss_module.f90` set `alpha = 1.d0` instead of the default `alpha = 1.153d0`, then `make new`.
+
+Bathymetry and relaxation parameter (Nov 2026):
+- The non-hydrostatic bathymetry terms are integrated implicitly in the source step (no bathymetry sensor),
+  which is stable over the steep bathymetry of this example. The ruled rectangles used in the first version of the paper to force
+  the SWEs over the Hawaiian ridge and two seamount groups are therefore no longer used; the only switch to the
+  SWEs is the depth-based one near the wet-dry front (`bouss_trans_low = bouss_trans_up = 20` m).
+- The relaxation parameter is set by the default `setaux.f90` of the library, `c^2 = alpha^2 g H` with H the local
+  depth at rest, from `rundata.bouss_data.bouss_EDC_alpha` (= 3). The example no longer has its own `setaux.f90`.
+

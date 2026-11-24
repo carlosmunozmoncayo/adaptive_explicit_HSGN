@@ -520,8 +520,8 @@ def setgeo(rundata):
     rundata.bouss_data.bouss_trans_low = 0.05  # depth to switch to SWE
     rundata.bouss_data.bouss_trans_up = 0.06    # depth to switch to Bouss
     alpha = 3.0           #flag_EDC_alpha PLEASE DO NOT DELETE THIS COMMENT
-    h0 = 1.0; g = 9.81 
-    rundata.bouss_data.bouss_EDC_c_sq = (alpha**2)*h0*g  # EDC wave speed
+    # c^2 = alpha^2 * g * H is computed in setaux, with H the local depth at rest (1 m here)
+    rundata.bouss_data.bouss_EDC_alpha = alpha
     rundata.bouss_data.bouss_EDC_gamma = 1.5  # EDC gamma (2 for Saint-Marie's sytem)
     rundata.bouss_data.bouss_csq_index = 1  # index of c^2 in aux array (Python indexing)
     rundata.bouss_data.bouss_decay_rate_index = 2  # index of decay rate in aux array (Python indexing)
