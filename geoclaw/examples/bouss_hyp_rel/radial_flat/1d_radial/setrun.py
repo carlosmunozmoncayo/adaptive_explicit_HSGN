@@ -91,13 +91,13 @@ def setrun(claw_pkg='geoclaw'):
         rundata.bouss_data.bouss_equations = -1
     rundata.bouss_data.bouss_min_depth = 1.  # depth to switch to SWE
     alpha = 3.0           #flag_EDC_alpha PLEASE DO NOT DELETE THIS COMMENT
-    h0 = 100.0; g = 9.81 #Computing relaxation parameter as suggested in Escalante et al. (2019)
-    rundata.bouss_data.bouss_EDC_c_sq = (alpha**2)*h0*g
+    # c^2 = alpha^2 * g * H is computed in setaux, with H the local depth at rest (100 m here)
+    rundata.bouss_data.bouss_EDC_alpha = alpha
     rundata.bouss_data.bouss_EDC_gamma = 1.5
     if Bouss_Hyp_rel==0:
         #rundata.bouss_data.bouss_equations = -1
         #Calling EDC but really solving SWE
-        rundata.bouss_data.bouss_EDC_c_sq = 0.0
+        rundata.bouss_data.bouss_EDC_alpha = 0.0
         
 
 
@@ -110,7 +110,7 @@ def setrun(claw_pkg='geoclaw'):
     clawdata.num_waves = numwaves
 
     # Number of auxiliary variables in the aux array (initialized in setaux)
-    clawdata.num_aux = 2
+    clawdata.num_aux = 4    # topography, capacity, c^2, SWE/Boussinesq indicator (see setaux)
     # Index of aux array corresponding to capacity function, if there is one:
     clawdata.capa_index = 2
 
