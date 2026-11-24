@@ -988,7 +988,6 @@ end function transition_function
 ! EDC / mbHSGN, y = (u, v, w, p):
 !     u_t = -gamma bx p/h,  v_t = -gamma by p/h,  w_t = gamma p/h,
 !     p_t = (c^2 (u bx + v by) - 2 c^2 w)/h
-!   skew-adjoint in u^2 + v^2 + 2 w^2 + gamma p^2/c^2 -> contraction for any dt, any grad b
 ! BBBD / HSGN, y = (u, v, w, sg, p, pb):
 !     u_t = -bx pb/h,  v_t = -by pb/h,  w_t = pb/h,  sg_t = (12 p - 6 pb)/h,
 !     p_t = (-c^2 sg - c^2 (u bx + v by))/h,
