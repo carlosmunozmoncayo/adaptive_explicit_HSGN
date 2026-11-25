@@ -8,13 +8,13 @@ fs = 14
 plt.rcParams.update({'font.size': fs})
 
 # SGN is split into two components (half each for this example)
-sgn_comp1 = [42.1-34.214, 159.2-123.5]
-sgn_comp2 = [34.214, 123.5]
+sgn_comp1 = [46.010-38.054, 156.6-123.3]
+sgn_comp2 = [38.054, 123.3]
 
 data = {
-    'HSGN':   [45.6, 118.3],
-    'mbHSGN': [30.8,  73.3],
-    'SWEs':   [ 2.8,  19.5],
+    'HSGN':   [31.9,  91.3],
+    'mbHSGN': [24.6,  72.4],
+    'SWEs':   [ 2.9,  19.9],
 }
 
 colors = {
